@@ -2,12 +2,16 @@
 
 import { createWsContext } from "react-ws-context";
 
+/** Demo 重連上限（與下方 `reconnectMax` 同步） */
+export const DEMO_WS_RECONNECT_MAX = 3;
+
 /** Demo 用實例；設定在 create 時固定 */
 export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
   createWsContext({
     url: "ws://localhost:8080",
     reconnectMs: 2000,
     autoConnect: true,
+    reconnectMax: DEMO_WS_RECONNECT_MAX,
     outgoingQueueMax: 5,
     liveness: {
       intervalMs: 10_000,

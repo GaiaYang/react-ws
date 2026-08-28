@@ -93,7 +93,7 @@ createWsContext(options)
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
-- **`WsState` holds low-frequency connection data only** — health (`status`), outbound queue (e.g. future `pendingCount`), reconnect (e.g. future `reconnectAttempt`). **Not** message payloads or app data.
+- **`WsState` holds low-frequency connection data only** — health (`status`), outbound queue (e.g. future `pendingCount`), reconnect (`reconnectAttempt`). **Not** message payloads or app data.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own state, cache, or store.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
 
@@ -107,15 +107,16 @@ Creates a `WsProvider` and hooks bound to the same connection config.
 
 #### `CreateWsContextOptions`
 
-| Field              | Type                                      | Default    | Description                                                            |
-| ------------------ | ----------------------------------------- | ---------- | ---------------------------------------------------------------------- |
-| `url`              | `string`                                  | (required) | WebSocket URL                                                          |
-| `protocols`        | `string \| string[]`                      | —          | Passed to `new WebSocket(url, protocols)`                              |
-| `autoConnect`      | `boolean`                                 | `true`     | Call `connect()` after `WsProvider` mounts                             |
-| `reconnectMs`      | `number`                                  | `0`        | Reconnect delay (ms) after unintentional close; `0` disables reconnect |
-| `outgoingQueueMax` | `number`                                  | `0`        | Max outbound queue size while not OPEN; `0` disables the queue         |
-| `parse`            | `(data: MessageEvent["data"]) => unknown` | see below  | Transform raw `MessageEvent.data`                                      |
-| `liveness`         | `LivenessOptions`                         | —          | Liveness / heartbeat config; omit to disable                           |
+| Field              | Type                                      | Default    | Description                                                                                                                   |
+| ------------------ | ----------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `url`              | `string`                                  | (required) | WebSocket URL                                                                                                                 |
+| `protocols`        | `string \| string[]`                      | —          | Passed to `new WebSocket(url, protocols)`                                                                                     |
+| `autoConnect`      | `boolean`                                 | `true`     | Call `connect()` after `WsProvider` mounts                                                                                    |
+| `reconnectMs`      | `number`                                  | `0`        | Reconnect delay (ms) after unintentional close; `0` disables reconnect                                                        |
+| `reconnectMax`     | `number`                                  | `0`        | Max auto-reconnects after unintentional close (excludes initial connect); `0` unlimited. `reconnectAttempt` resets on open, manual `connect()`, or `disconnect()` |
+| `outgoingQueueMax` | `number`                                  | `0`        | Max outbound queue size while not OPEN; `0` disables the queue                                                                |
+| `parse`            | `(data: MessageEvent["data"]) => unknown` | see below  | Transform raw `MessageEvent.data`                                                                                             |
+| `liveness`         | `LivenessOptions`                         | —          | Liveness / heartbeat config; omit to disable                                                                                  |
 
 **Default `parse`:**
 
@@ -137,12 +138,12 @@ Creates a `WsProvider` and hooks bound to the same connection config.
 
 Creates, owns, and tears down the native `WebSocket`.
 
-| Behavior                    | Description                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------------- |
-| mount + `autoConnect: true` | Calls `connect()`                                                                            |
-| unmount                     | Closes connection, stops liveness, clears outbound queue, emits `close`                      |
-| reconnect                   | Fixed interval when `reconnectMs > 0` and close was not intentional (no exponential backoff) |
-| before reconnect            | Closes existing socket and emits `close` (reason: `"reconnect"`)                             |
+| Behavior                    | Description                                                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| mount + `autoConnect: true` | Calls `connect()`                                                                                                                 |
+| unmount                     | Closes connection, stops liveness, clears outbound queue, emits `close`                                                           |
+| reconnect                   | Fixed interval when `reconnectMs > 0` and close was not intentional (no exponential backoff); stops after `reconnectMax` if `> 0` |
+| before reconnect            | Closes existing socket and emits `close` (reason: `"reconnect"`)                                                                  |
 
 ---
 
@@ -181,15 +182,20 @@ useWsStore<T>(selector: (state: WsState) => T): T
 ```ts
 interface WsState {
   status: WsStatus;
+  /** Reconnects scheduled this cycle (+1 on unintentional close, not on success) */
+  reconnectAttempt: number;
+  /** `true` when `reconnectMax` is hit and the final attempt failed; cleared by `connect()` / `disconnect()` */
+  reconnectExhausted: boolean;
   // Possible future fields (all low-frequency, connection-layer):
-  // reconnectAttempt?: number;
   // pendingCount?: number;
 }
 ```
 
-| Belongs in store                                                          | Does not belong                              |
-| ------------------------------------------------------------------------- | -------------------------------------------- |
-| `status`, reconnect count, pending queue size, liveness / stall summaries | `lastMessage`, message history, app payloads |
+| Belongs in store                                                                                              | Does not belong                              |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `status`, reconnect progress (`reconnectAttempt` / `reconnectExhausted`), pending queue size, liveness / stall summaries | `lastMessage`, message history, app payloads |
+
+`CreateWsContextOptions` (e.g. `url`, `reconnectMax`) are frozen at `createWsContext` and are **not** in `WsState`. For UI like `n/max`, keep the config alongside the store fields you subscribe to.
 
 #### `WsStatus`
 

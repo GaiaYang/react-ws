@@ -18,19 +18,38 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
  * 可訂閱的連線層 state（低頻更新）。
  *
  * 只放：**連線健康**、**outbound 佇列**、**重連** 等連線生命週期資訊。
+ *
  * 不放：訊息 payload、訊息歷史、業務資料（請用 `useWsEvents` 或自行管理 state）。
  *
- * 未來可能擴充例如 `reconnectAttempt`、`pendingCount`；新增欄位時請維持低頻、可 selector 訂閱。
+ * 未來可能擴充例如 `pendingCount`；新增欄位時請維持低頻、可 selector 訂閱。
  */
 export type WsState = {
   /** 連線生命週期狀態 */
   status: WsStatus;
+  /**
+   * 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1）。
+   *
+   * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
+   *
+   * 成功 `open`、手動 `connect()` 或主動 `disconnect()` 歸零。
+   */
+  reconnectAttempt: number;
+  /**
+   * 本輪自動重連已達 `reconnectMax` 且最後一次也失敗。
+   *
+   * 手動 `connect()` 或 `disconnect()` 設定為 `false`
+   */
+  reconnectExhausted: boolean;
 };
 
 export type WsStoreApi = StoreApi<WsState>;
 
 export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
-  return createStore<WsState>({ status: init });
+  return createStore<WsState>({
+    status: init,
+    reconnectAttempt: 0,
+    reconnectExhausted: false,
+  });
 }
 
 /** 每個 `WsProvider` 各有一份 {@link WsState} store */
