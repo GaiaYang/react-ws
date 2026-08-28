@@ -148,23 +148,35 @@ describe("createWsContext smoke", () => {
     });
 
     function Probe() {
-      const { status } = useWsStore();
-      return createElement("div", null, status);
+      const status = useWsStore((s) => s.status);
+      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
+      return createElement(
+        "div",
+        {
+          "data-status": status,
+          "data-attempt": reconnectAttempt,
+        },
+        status,
+      );
     }
 
-    const { getByText } = render(
+    const { container, getByText } = render(
       createElement(WsProvider, null, createElement(Probe)),
     );
+    const attempt = () =>
+      container.querySelector("[data-attempt]")?.getAttribute("data-attempt");
 
     await act(async () => {
       latestWs().open();
     });
     expect(getByText("open")).toBeTruthy();
+    expect(attempt()).toBe("0");
 
     await act(async () => {
       latestWs().drop();
     });
     expect(getByText("closed")).toBeTruthy();
+    expect(attempt()).toBe("1");
     expect(MockWebSocket.instances).toHaveLength(1);
 
     await act(async () => {
@@ -176,6 +188,80 @@ describe("createWsContext smoke", () => {
       latestWs().open();
     });
     expect(getByText("open")).toBeTruthy();
+    expect(attempt()).toBe("0");
+  });
+
+  it("stops after reconnectMax and connect() retries", async () => {
+    vi.useFakeTimers();
+
+    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 100,
+      reconnectMax: 2,
+    });
+
+    let api!: ReturnType<typeof useWsActions>;
+
+    function Probe() {
+      api = useWsActions();
+      const status = useWsStore((s) => s.status);
+      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
+      const reconnectExhausted = useWsStore((s) => s.reconnectExhausted);
+      return createElement(
+        "div",
+        {
+          "data-status": status,
+          "data-attempt": reconnectAttempt,
+          "data-exhausted": reconnectExhausted,
+        },
+        status,
+      );
+    }
+
+    const { container, getByText } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const attempt = () =>
+      container.querySelector("[data-attempt]")?.getAttribute("data-attempt");
+    const exhausted = () =>
+      container
+        .querySelector("[data-exhausted]")
+        ?.getAttribute("data-exhausted");
+
+    await act(async () => {
+      latestWs().open();
+    });
+
+    await act(async () => {
+      latestWs().drop();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(attempt()).toBe("1");
+
+    await act(async () => {
+      latestWs().drop();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(MockWebSocket.instances).toHaveLength(3);
+    expect(attempt()).toBe("2");
+
+    await act(async () => {
+      latestWs().drop();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(MockWebSocket.instances).toHaveLength(3);
+    expect(getByText("closed")).toBeTruthy();
+    expect(attempt()).toBe("2");
+    expect(exhausted()).toBe("true");
+
+    await act(async () => {
+      api.connect();
+    });
+    expect(MockWebSocket.instances).toHaveLength(4);
+    expect(attempt()).toBe("0");
+    expect(exhausted()).toBe("false");
   });
 
   it("nested providers isolate events", async () => {

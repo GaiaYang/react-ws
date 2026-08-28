@@ -93,7 +93,7 @@ createWsContext(options)
 ```
 
 - **同一應用可多次呼叫 `createWsContext`**，每次產生一組互不共用的 Provider 與 hooks（例如同時連業務 WS 與通知 WS）。
-- **`WsState` 只放連線層、低頻欄位** — 連線健康（如 `status`）、outbound 佇列（如未來 `pendingCount`）、重連（如未來 `reconnectAttempt`）。**不放**訊息 payload 或業務資料。
+- **`WsState` 只放連線層、低頻欄位** — 連線健康（如 `status`）、outbound 佇列（如未來 `pendingCount`）、重連（`reconnectAttempt`）。**不放**訊息 payload 或業務資料。
 - **訊息與錯誤事件** — 請用 `useWsEvents`；訊息歷史請自行寫入 state、cache 或外部 store。
 - **連線錯誤不反映在 `WsStatus`** — 請用 `useWsEvents("error", …)` 處理；原生 `error` 事件後通常緊接 `close`。
 
@@ -107,15 +107,16 @@ createWsContext(options)
 
 #### 參數：`CreateWsContextOptions`
 
-| 欄位               | 型別                                      | 預設     | 說明                                           |
-| ------------------ | ----------------------------------------- | -------- | ---------------------------------------------- |
-| `url`              | `string`                                  | （必填） | WebSocket 連線網址                             |
-| `protocols`        | `string \| string[]`                      | —        | 傳入 `new WebSocket(url, protocols)` 的子協定  |
-| `autoConnect`      | `boolean`                                 | `true`   | `WsProvider` mount 後是否自動呼叫 `connect()`  |
-| `reconnectMs`      | `number`                                  | `0`      | 非主動斷線後的重連間隔（毫秒）；`0` 表示不重連 |
-| `outgoingQueueMax` | `number`                                  | `0`      | 未 OPEN 時 outbound 佇列上限；`0` 關閉佇列     |
-| `parse`            | `(data: MessageEvent["data"]) => unknown` | 見下方   | 將原始 `MessageEvent.data` 轉成業務資料        |
-| `liveness`         | `LivenessOptions`                         | —        | 探活設定；省略則不啟用                         |
+| 欄位               | 型別                                      | 預設     | 說明                                                                                          |
+| ------------------ | ----------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `url`              | `string`                                  | （必填） | WebSocket 連線網址                                                                            |
+| `protocols`        | `string \| string[]`                      | —        | 傳入 `new WebSocket(url, protocols)` 的子協定                                                 |
+| `autoConnect`      | `boolean`                                 | `true`   | `WsProvider` mount 後是否自動呼叫 `connect()`                                                 |
+| `reconnectMs`      | `number`                                  | `0`      | 非主動斷線後的重連間隔（毫秒）；`0` 表示不重連                                                |
+| `reconnectMax`     | `number`                                  | `0`      | 非主動斷線後最多自動重連幾次（不含首次連線）；`0` 不限制。`reconnectAttempt` 於成功 `open`、手動 `connect()` 或 `disconnect()` 歸零 |
+| `outgoingQueueMax` | `number`                                  | `0`      | 未 OPEN 時 outbound 佇列上限；`0` 關閉佇列                                                    |
+| `parse`            | `(data: MessageEvent["data"]) => unknown` | 見下方   | 將原始 `MessageEvent.data` 轉成業務資料                                                       |
+| `liveness`         | `LivenessOptions`                         | —        | 探活設定；省略則不啟用                                                                        |
 
 **預設 `parse` 行為：**
 
@@ -137,12 +138,12 @@ createWsContext(options)
 
 負責建立、維護與銷毀原生 `WebSocket` 實例。
 
-| 行為                        | 說明                                                                        |
-| --------------------------- | --------------------------------------------------------------------------- |
-| mount + `autoConnect: true` | 自動 `connect()`                                                            |
-| unmount                     | 主動關閉連線、停止探活、清空 outbound 佇列，並 emit `close`                 |
-| 重連                        | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無 exponential backoff） |
-| 重連前                      | 若已有舊 socket，先關閉並 emit `close`（reason: `"reconnect"`）             |
+| 行為                        | 說明                                                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| mount + `autoConnect: true` | 自動 `connect()`                                                                                                 |
+| unmount                     | 主動關閉連線、停止探活、清空 outbound 佇列，並 emit `close`                                                      |
+| 重連                        | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無 exponential backoff）；`reconnectMax > 0` 時超過次數即停止 |
+| 重連前                      | 若已有舊 socket，先關閉並 emit `close`（reason: `"reconnect"`）                                                  |
 
 ---
 
@@ -181,15 +182,20 @@ useWsStore<T>(selector: (state: WsState) => T): T
 ```ts
 interface WsState {
   status: WsStatus;
+  /** 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1） */
+  reconnectAttempt: number;
+  /** 本輪自動重連已達 `reconnectMax` 且最後一次也失敗；`connect()` / `disconnect()` 歸 `false` */
+  reconnectExhausted: boolean;
   // 未來可能擴充（皆為低頻、連線層）：
-  // reconnectAttempt?: number;
   // pendingCount?: number;
 }
 ```
 
-| 適合放進 store                                               | 不適合                                |
-| ------------------------------------------------------------ | ------------------------------------- |
-| `status`、重連次數、待送佇列長度、探活／stall 等連線健康摘要 | `lastMessage`、訊息歷史、業務 payload |
+| 適合放進 store                                                                                         | 不適合                                |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| `status`、重連進度（`reconnectAttempt` / `reconnectExhausted`）、待送佇列長度、探活／stall 等連線健康摘要 | `lastMessage`、訊息歷史、業務 payload |
+
+`CreateWsContextOptions`（如 `url`、`reconnectMax`）在 `createWsContext` 時凍結，**不在** `WsState`；UI 若需顯示 `n/max` 請自行保存設定值，或訂閱時與 store 欄位組合。
 
 #### `WsStatus`
 

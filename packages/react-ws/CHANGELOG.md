@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-28
+
+### Added
+
+- `reconnectMax` option — limit auto-reconnect attempts after unintentional close (excludes initial `autoConnect` / manual connect); `0` means unlimited
+- `WsState.reconnectAttempt` — subscribable count of reconnects scheduled this cycle (incremented when a reconnect is queued, not on success)
+- `WsState.reconnectExhausted` — `true` when `reconnectMax` is hit and the final attempt also failed
+- Reconnect module (`createReconnect` / `useReconnect`) extracted from `WsProvider`, with dedicated smoke tests
+
+### Changed
+
+- Reconnect scheduling refactored into `src/ws-context/reconnect.ts`
+- `disconnect()` and provider unmount reset `reconnectAttempt` and `reconnectExhausted`
+
 ## [0.1.1] - 2026-08-28
 
 ### Fixed

@@ -6,12 +6,36 @@ import {
   useWsActions,
   useWsStore,
   useWsEvents,
+  DEMO_WS_RECONNECT_MAX,
 } from "@/components/demo-ws";
 import { createStallMessage } from "react-ws-context/stall";
+import type { WsStatus } from "react-ws-context";
+
+function formatReconnectLabel(
+  attempt: number,
+  max: number,
+  status: WsStatus,
+  exhausted: boolean,
+): string {
+  if (max <= 0) return attempt > 0 ? `${attempt}（不限）` : "—";
+  const base = `${attempt}/${max}`;
+  if (exhausted) return `${max}/${max}（已達上限）`;
+  if (attempt === 0) return base;
+  if (status === "connecting") return `${base}（重連中）`;
+  return base;
+}
 
 function DemoPanel() {
   const { sendJson, connect, disconnect } = useWsActions();
   const status = useWsStore((state) => state.status);
+  const reconnectAttempt = useWsStore((state) => state.reconnectAttempt);
+  const reconnectExhausted = useWsStore((state) => state.reconnectExhausted);
+  const reconnectLabel = formatReconnectLabel(
+    reconnectAttempt,
+    DEMO_WS_RECONNECT_MAX,
+    status,
+    reconnectExhausted,
+  );
   const [lastMessage, setLastMessage] = useState<unknown>(null);
   const [text, setText] = useState("hello");
 
@@ -24,6 +48,9 @@ function DemoPanel() {
     <div className="flex max-w-md flex-col gap-3">
       <p>
         狀態：<span className="font-mono">{status}</span>
+      </p>
+      <p>
+        重連：<span className="font-mono">{reconnectLabel}</span>
       </p>
       <div className="flex gap-2">
         <button type="button" className="btn btn-sm" onClick={connect}>

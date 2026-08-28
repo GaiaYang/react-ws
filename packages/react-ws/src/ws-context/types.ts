@@ -20,6 +20,15 @@ export interface CreateWsContextOptions {
    */
   reconnectMs?: number;
   /**
+   * 非主動斷線後最多自動重連幾次（不含首次 `autoConnect`）。
+   * `reconnectAttempt` 於成功 `open`、手動 `connect()` 或 `disconnect()` 歸零。
+   *
+   * `0` 不限制（只要 `reconnectMs > 0`）。
+   *
+   * @default 0
+   */
+  reconnectMax?: number;
+  /**
    * 未連線時發送訊息的佇列上限；`0` 關閉。
    *
    * @default 0

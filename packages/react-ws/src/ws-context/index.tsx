@@ -17,11 +17,8 @@ import {
   type WsStatus,
 } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
-import {
-  clearReconnectTimer,
-  clientCloseEvent,
-  detachAndClose,
-} from "./socket";
+import { useReconnect } from "./reconnect";
+import { clientCloseEvent, detachAndClose } from "./socket";
 
 export type { CreateWsContextOptions, WsContextValue, WsEvents } from "./types";
 
@@ -47,6 +44,7 @@ export function createWsContext(options: CreateWsContextOptions) {
     protocols,
     autoConnect = true,
     reconnectMs = 0,
+    reconnectMax = 0,
     outgoingQueueMax = 0,
     parse = defaultParse,
     liveness,
@@ -63,10 +61,12 @@ export function createWsContext(options: CreateWsContextOptions) {
     const wsRef = useRef<WebSocket | null>(null);
     const store = useWsStoreApi();
     const emitter = useEmitter<WsEvents>();
-    const intentionalCloseRef = useRef(false);
-    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-      null,
-    );
+    const reconnect = useReconnect(reconnectMs, reconnectMax, {
+      getAttempt: () => store.getState().reconnectAttempt,
+      setAttempt: (reconnectAttempt) => store.setState({ reconnectAttempt }),
+      setExhausted: (reconnectExhausted) =>
+        store.setState({ reconnectExhausted }),
+    });
     const outgoingQueue = useOutgoingQueue(outgoingQueueMax);
     const livenessSession = useLiveness(liveness, () => wsRef.current);
 
@@ -83,8 +83,7 @@ export function createWsContext(options: CreateWsContextOptions) {
     );
 
     const disconnect = useCallback<WsContextValue["disconnect"]>(() => {
-      intentionalCloseRef.current = true;
-      clearReconnectTimer(reconnectTimerRef);
+      reconnect.cancel();
       livenessSession.stop();
       outgoingQueue.clear();
       const ws = wsRef.current;
@@ -96,13 +95,12 @@ export function createWsContext(options: CreateWsContextOptions) {
       } else {
         setStatus("closed");
       }
-    }, [setStatus, emitter, outgoingQueue, livenessSession]);
+    }, [setStatus, emitter, outgoingQueue, livenessSession, reconnect]);
 
     const connect = useCallback<WsContextValue["connect"]>(() => {
       if (typeof window === "undefined") return;
 
-      clearReconnectTimer(reconnectTimerRef);
-      intentionalCloseRef.current = false;
+      reconnect.onConnectBegin();
       livenessSession.stop();
 
       const prev = wsRef.current;
@@ -119,6 +117,7 @@ export function createWsContext(options: CreateWsContextOptions) {
 
       ws.onopen = (event) => {
         if (wsRef.current !== ws) return;
+        reconnect.onOpen();
         setStatus("open");
         outgoingQueue.flush((data) => ws.send(data));
         livenessSession.start(ws);
@@ -142,20 +141,16 @@ export function createWsContext(options: CreateWsContextOptions) {
         livenessSession.stop();
         setStatus("closed");
         emitter.emit("close", event);
-
-        if (intentionalCloseRef.current || reconnectMs <= 0) return;
-        // ponytail: 固定間隔重連，無 backoff；之後可換成指數退避
-        reconnectTimerRef.current = setTimeout(() => {
-          connect();
-        }, reconnectMs);
+        reconnect.scheduleAfterClose();
       };
-    }, [setStatus, emitter, outgoingQueue, livenessSession]);
+    }, [setStatus, emitter, outgoingQueue, livenessSession, reconnect]);
+
+    reconnect.bindOnReconnect(connect);
 
     useEffect(() => {
       if (autoConnect) connect();
       return () => {
-        intentionalCloseRef.current = true;
-        clearReconnectTimer(reconnectTimerRef);
+        reconnect.cancel();
         livenessSession.stop();
         outgoingQueue.clear();
         const ws = wsRef.current;
@@ -165,7 +160,7 @@ export function createWsContext(options: CreateWsContextOptions) {
           emitter.emit("close", clientCloseEvent("provider unmount"));
         }
       };
-    }, [connect, emitter, outgoingQueue, livenessSession]);
+    }, [connect, emitter, outgoingQueue, livenessSession, reconnect]);
 
     const send = useCallback<WsContextValue["send"]>(
       (data) => {
