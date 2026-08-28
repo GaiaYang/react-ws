@@ -1,5 +1,8 @@
 # react-ws-context
 
+[![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+[![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+
 > **繁體中文：** [README.zh-TW.md](./README.zh-TW.md)
 
 A React **WebSocket connection layer**. It separates connection lifecycle, subscribable state, and message events so status updates or high-frequency messages do not re-render your entire component tree.
@@ -28,8 +31,8 @@ The package entry is marked `"use client"`. Modules that call `createWsContext` 
 
 ```bash
 pnpm add react-ws-context react
-# npm install react-ws-context react
-# yarn add react-ws-context react
+# or: npm install react-ws-context react
+# or: yarn add react-ws-context react
 ```
 
 ## Quick start

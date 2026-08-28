@@ -2,6 +2,9 @@
 
 # react-ws-context
 
+[![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+[![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+
 React 用的 WebSocket **連線層**套件。將連線生命週期、可訂閱狀態與訊息事件分離，避免 status 或高頻訊息更新拖垮整棵元件樹。
 
 > **維護者：** [GaiaYang](https://github.com/GaiaYang)  
@@ -28,8 +31,8 @@ React 用的 WebSocket **連線層**套件。將連線生命週期、可訂閱�
 
 ```bash
 pnpm add react-ws-context react
-# npm install react-ws-context react
-# yarn add react-ws-context react
+# or: npm install react-ws-context react
+# or: yarn add react-ws-context react
 ```
 
 ## 快速開始

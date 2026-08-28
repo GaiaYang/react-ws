@@ -1,5 +1,8 @@
 # react-ws monorepo
 
+[![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+[![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+
 > **繁體中文：** [README.zh-TW.md](./README.zh-TW.md)
 
 React WebSocket **connection layer** monorepo. Publishable package: **`react-ws-context`** (`packages/react-ws`).
@@ -27,7 +30,7 @@ pnpm build:pkg        # Build packages/react-ws → dist/
 pnpm typecheck        # Typecheck entire workspace
 ```
 
-The demo depends on `react-ws-context` via `workspace:*`. `pnpm dev` runs `tsdown --watch` alongside the demo (Next `transpilePackages`); `pnpm publish` ships `dist/`.
+The demo depends on `react-ws-context` via `workspace:*`. `pnpm dev` runs `tsdown --watch` alongside the demo; `pnpm publish` ships `dist/`.
 
 ### Add a dependency to a workspace package
 
@@ -35,6 +38,14 @@ The demo depends on `react-ws-context` via `workspace:*`. `pnpm dev` runs `tsdow
 pnpm --filter @react-ws/web add lodash-es
 pnpm --filter react-ws-context add -D some-dev-tool
 pnpm --filter @react-ws/mock-ws add ws
+```
+
+## Install from npm
+
+```bash
+pnpm add react-ws-context react
+# or: npm install react-ws-context react
+# or: yarn add react-ws-context react
 ```
 
 ## Package usage (summary)

@@ -1,5 +1,8 @@
 # react-ws monorepo
 
+[![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+[![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
+
 > **English:** [README.md](./README.md)
 
 React WebSocket **連線層** monorepo。可發佈套件：**`react-ws-context`**（目錄 `packages/react-ws`）。
@@ -27,7 +30,7 @@ pnpm build:pkg        # 編譯 packages/react-ws → dist/
 pnpm typecheck        # 全 workspace 型別檢查
 ```
 
-Demo 透過 `workspace:*` 依賴 `react-ws-context`；`pnpm dev` 會同時跑 `tsdown --watch` 與 Demo（Next `transpilePackages`），`pnpm publish` 時改發 `dist/`。
+Demo 透過 `workspace:*` 依賴 `react-ws-context`；`pnpm dev` 會同時跑 `tsdown --watch` 與 Demo，`pnpm publish` 時改發 `dist/`。
 
 ### 為子專案加依賴
 
@@ -35,6 +38,14 @@ Demo 透過 `workspace:*` 依賴 `react-ws-context`；`pnpm dev` 會同時跑 `t
 pnpm --filter @react-ws/web add lodash-es
 pnpm --filter react-ws-context add -D some-dev-tool
 pnpm --filter @react-ws/mock-ws add ws
+```
+
+## 從 npm 安裝
+
+```bash
+pnpm add react-ws-context react
+# or: npm install react-ws-context react
+# or: yarn add react-ws-context react
 ```
 
 ## 套件用法（摘要）
