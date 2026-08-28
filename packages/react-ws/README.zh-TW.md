@@ -93,7 +93,7 @@ createWsContext(options)
 ```
 
 - **同一應用可多次呼叫 `createWsContext`**，每次產生一組互不共用的 Provider 與 hooks（例如同時連業務 WS 與通知 WS）。
-- **`WsState` 只放連線層、低頻欄位** — 連線健康（如 `status`）、outbound 佇列（如未來 `pendingCount`）、重連（`reconnectAttempt`）。**不放**訊息 payload 或業務資料。
+- **`WsState` 只放連線層、低頻欄位** — 連線健康（`status`、`phase`）、outbound 佇列（如未來 `pendingCount`）、重連（`reconnectAttempt`）。**不放**訊息 payload 或業務資料。
 - **訊息與錯誤事件** — 請用 `useWsEvents`；訊息歷史請自行寫入 state、cache 或外部 store。
 - **連線錯誤不反映在 `WsStatus`** — 請用 `useWsEvents("error", …)` 處理；原生 `error` 事件後通常緊接 `close`。
 
@@ -182,6 +182,8 @@ useWsStore<T>(selector: (state: WsState) => T): T
 ```ts
 interface WsState {
   status: WsStatus;
+  /** Provider 連線意圖與重連策略階段；與 `status` 正交 */
+  phase: WsPhase;
   /** 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1） */
   reconnectAttempt: number;
   /** 本輪自動重連已達 `reconnectMax` 且最後一次也失敗；`connect()` / `disconnect()` 歸 `false` */
@@ -191,9 +193,9 @@ interface WsState {
 }
 ```
 
-| 適合放進 store                                                                                         | 不適合                                |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------- |
-| `status`、重連進度（`reconnectAttempt` / `reconnectExhausted`）、待送佇列長度、探活／stall 等連線健康摘要 | `lastMessage`、訊息歷史、業務 payload |
+| 適合放進 store                                                                                                        | 不適合                                |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `status`、`phase`、重連進度（`reconnectAttempt` / `reconnectExhausted`）、待送佇列長度、探活／stall 等連線健康摘要 | `lastMessage`、訊息歷史、業務 payload |
 
 `CreateWsContextOptions`（如 `url`、`reconnectMax`）在 `createWsContext` 時凍結，**不在** `WsState`；UI 若需顯示 `n/max` 請自行保存設定值，或訂閱時與 store 欄位組合。
 
@@ -206,10 +208,31 @@ interface WsState {
 | `open`       | 已連線   |
 | `closed`     | 已斷線   |
 
+反映 WebSocket 當下的連線狀態（類似 readyState 映射）。**不含**「是否在自動重連週期」「是否為使用者主動斷線」等 provider 意圖——請搭配 `phase`。
+
+#### `WsPhase`
+
+| 值              | 意義                                                                 |
+| --------------- | -------------------------------------------------------------------- |
+| `idle`          | 未連線、未排程重連（初始或手動 `disconnect()`）                    |
+| `connecting`    | 首次或手動 `connect()` 連線中                                        |
+| `open`          | 已連線                                                               |
+| `reconnecting`  | 自動重連週期（等待計時器或連線中）；搭配 `status`、`reconnectAttempt` |
+| `stopped`       | 不會再自動重連；`reconnectExhausted` 區分達上限或未啟用重連        |
+
+`status` 與 `phase` 常同時變化，但語意不同。例如 `phase === "reconnecting"` 且 `status === "closed"` 表示正在等待重連計時器；`status === "connecting"` 則表示計時器已觸發、正在嘗試連線。
+
 **建議：** 以 selector 只訂閱需要的欄位；state 擴充後可避免不必要的重繪。
 
 ```tsx
+const phase = useWsStore((s) => s.phase);
 const status = useWsStore((s) => s.status);
+
+// 手動連線：閒置或已停止時才可點
+const canConnect = phase === "idle" || phase === "stopped";
+// 主動斷線：連線中或重連週期內才可點
+const canDisconnect =
+  phase === "open" || phase === "connecting" || phase === "reconnecting";
 ```
 
 ---
@@ -292,7 +315,8 @@ createWsContext({
 | `CreateWsContextOptions` | `createWsContext` 的選項                           |
 | `WsContextValue`         | `useWsActions()` 回傳型別                          |
 | `WsEvents`               | 事件名稱與 handler 的型別對應                      |
-| `WsStatus`               | 連線生命週期狀態聯集（`WsState` 的一環）           |
+| `WsStatus`               | WebSocket 連線狀態（`WsState` 的一環）             |
+| `WsPhase`                | Provider 連線意圖與重連策略階段（`WsState` 的一環） |
 | `WsState`                | 可訂閱 store 的 state 形狀（連線健康／佇列／重連） |
 
 ---
@@ -343,7 +367,7 @@ sendJson(createStallMessage("stall"));
 | 項目           | 說明                                                                                       |
 | -------------- | ------------------------------------------------------------------------------------------ |
 | 設定不可變     | `url`、`reconnectMs` 等建立後固定；需換 URL 請另建 context 或手動 `disconnect` + `connect` |
-| 重連策略       | 固定間隔，無 exponential backoff、無最大重試次數                                           |
+| 重連策略       | 固定間隔，無 exponential backoff；`reconnectMax > 0` 可限制次數 |
 | SSR            | 不在 server 建立 `WebSocket`；`connect()` 在 `window` 不存在時為 no-op                     |
 | 錯誤狀態       | 不設 `"error"` status；請監聽 `useWsEvents("error")`                                       |
 | `WsState` 範圍 | 只含連線健康／佇列／重連；訊息與業務資料不走 store                                         |

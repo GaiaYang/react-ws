@@ -93,7 +93,7 @@ createWsContext(options)
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
-- **`WsState` holds low-frequency connection data only** — health (`status`), outbound queue (e.g. future `pendingCount`), reconnect (`reconnectAttempt`). **Not** message payloads or app data.
+- **`WsState` holds low-frequency connection data only** — health (`status`, `phase`), outbound queue (e.g. future `pendingCount`), reconnect (`reconnectAttempt`). **Not** message payloads or app data.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own state, cache, or store.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
 
@@ -182,6 +182,8 @@ useWsStore<T>(selector: (state: WsState) => T): T
 ```ts
 interface WsState {
   status: WsStatus;
+  /** Provider connection intent and reconnect strategy; orthogonal to `status` */
+  phase: WsPhase;
   /** Reconnects scheduled this cycle (+1 on unintentional close, not on success) */
   reconnectAttempt: number;
   /** `true` when `reconnectMax` is hit and the final attempt failed; cleared by `connect()` / `disconnect()` */
@@ -191,9 +193,9 @@ interface WsState {
 }
 ```
 
-| Belongs in store                                                                                              | Does not belong                              |
-| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `status`, reconnect progress (`reconnectAttempt` / `reconnectExhausted`), pending queue size, liveness / stall summaries | `lastMessage`, message history, app payloads |
+| Belongs in store                                                                                                              | Does not belong                              |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `status`, `phase`, reconnect progress (`reconnectAttempt` / `reconnectExhausted`), pending queue size, liveness / stall summaries | `lastMessage`, message history, app payloads |
 
 `CreateWsContextOptions` (e.g. `url`, `reconnectMax`) are frozen at `createWsContext` and are **not** in `WsState`. For UI like `n/max`, keep the config alongside the store fields you subscribe to.
 
@@ -206,10 +208,31 @@ interface WsState {
 | `open`       | Connected     |
 | `closed`     | Disconnected  |
 
+Maps to the current WebSocket connection state (similar to readyState). Does **not** express provider intent such as “in an auto-reconnect cycle” or “user disconnected” — use `phase` for that.
+
+#### `WsPhase`
+
+| Value           | Meaning                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `idle`          | Not connected, no reconnect scheduled (initial or manual `disconnect()`)                         |
+| `connecting`    | First connect or manual `connect()` in progress                                                  |
+| `open`          | Connected                                                                                        |
+| `reconnecting`  | Auto-reconnect cycle (waiting for timer or connecting); pair with `status`, `reconnectAttempt`   |
+| `stopped`       | Will not auto-reconnect; use `reconnectExhausted` to distinguish max retries vs reconnect disabled |
+
+`status` and `phase` often change together but mean different things. For example, `phase === "reconnecting"` with `status === "closed"` means waiting for the reconnect timer; `status === "connecting"` means the timer fired and a connect attempt is in progress.
+
 **Tip:** use a selector to subscribe to only the fields you need.
 
 ```tsx
+const phase = useWsStore((s) => s.phase);
 const status = useWsStore((s) => s.status);
+
+// Manual connect: only when idle or stopped
+const canConnect = phase === "idle" || phase === "stopped";
+// Intentional disconnect: while connected or in a connect/reconnect attempt
+const canDisconnect =
+  phase === "open" || phase === "connecting" || phase === "reconnecting";
 ```
 
 ---
@@ -292,7 +315,8 @@ From the main `react-ws-context` entry:
 | `CreateWsContextOptions` | Options for `createWsContext`                         |
 | `WsContextValue`         | Return type of `useWsActions()`                       |
 | `WsEvents`               | Event name → handler map                              |
-| `WsStatus`               | Connection lifecycle status                           |
+| `WsStatus`               | WebSocket connection state (`WsState`)                |
+| `WsPhase`                | Provider connection intent / reconnect phase (`WsState`) |
 | `WsState`                | Subscribable store shape (health / queue / reconnect) |
 
 ---
@@ -330,7 +354,7 @@ import {
 | Topic            | Notes                                                                          |
 | ---------------- | ------------------------------------------------------------------------------ |
 | Immutable config | `url`, `reconnectMs`, etc. are fixed at create time                            |
-| Reconnect        | Fixed interval only; no exponential backoff or max retries yet                 |
+| Reconnect        | Fixed interval only; no exponential backoff; optional cap via `reconnectMax` |
 | SSR              | No `WebSocket` on the server; `connect()` is a no-op without `window`          |
 | Error status     | No `"error"` in `WsStatus`; use `useWsEvents("error")`                         |
 | `WsState` scope  | Health / queue / reconnect only — not messages or app data                     |

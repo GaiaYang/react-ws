@@ -14,6 +14,7 @@ import {
   createUseWsStore,
   createWsStoreContext,
   useWsStoreApi,
+  type WsPhase,
   type WsStatus,
 } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
@@ -77,6 +78,13 @@ export function createWsContext(options: CreateWsContextOptions) {
       [store],
     );
 
+    const setPhase = useCallback(
+      (phase: WsPhase) => {
+        store.setState({ phase });
+      },
+      [store],
+    );
+
     const getStatus = useCallback<WsContextValue["getStatus"]>(
       () => store.getState().status,
       [store],
@@ -86,6 +94,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       reconnect.cancel();
       livenessSession.stop();
       outgoingQueue.clear();
+      setPhase("idle");
       const ws = wsRef.current;
       wsRef.current = null;
       if (ws) {
@@ -95,12 +104,12 @@ export function createWsContext(options: CreateWsContextOptions) {
       } else {
         setStatus("closed");
       }
-    }, [setStatus, emitter, outgoingQueue, livenessSession, reconnect]);
+    }, [setStatus, setPhase, emitter, outgoingQueue, livenessSession, reconnect]);
 
     const connect = useCallback<WsContextValue["connect"]>(() => {
       if (typeof window === "undefined") return;
 
-      reconnect.onConnectBegin();
+      const fromReconnect = reconnect.onConnectBegin();
       livenessSession.stop();
 
       const prev = wsRef.current;
@@ -111,6 +120,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       }
 
       setStatus("connecting");
+      setPhase(fromReconnect ? "reconnecting" : "connecting");
 
       const ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
       wsRef.current = ws;
@@ -119,6 +129,7 @@ export function createWsContext(options: CreateWsContextOptions) {
         if (wsRef.current !== ws) return;
         reconnect.onOpen();
         setStatus("open");
+        setPhase("open");
         outgoingQueue.flush((data) => ws.send(data));
         livenessSession.start(ws);
         emitter.emit("open", event);
@@ -141,9 +152,14 @@ export function createWsContext(options: CreateWsContextOptions) {
         livenessSession.stop();
         setStatus("closed");
         emitter.emit("close", event);
-        reconnect.scheduleAfterClose();
+        const scheduled = reconnect.scheduleAfterClose();
+        if (scheduled) {
+          setPhase("reconnecting");
+        } else if (store.getState().phase !== "idle") {
+          setPhase("stopped");
+        }
       };
-    }, [setStatus, emitter, outgoingQueue, livenessSession, reconnect]);
+    }, [setStatus, setPhase, emitter, outgoingQueue, livenessSession, reconnect, store]);
 
     reconnect.bindOnReconnect(connect);
 

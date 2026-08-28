@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-29
+
+### Added
+
+- `WsPhase` type — provider connection intent and reconnect strategy: `idle` | `connecting` | `open` | `reconnecting` | `stopped`
+- `WsState.phase` — subscribable provider lifecycle phase, orthogonal to `status` (WebSocket readyState mapping); use with `reconnectAttempt` / `reconnectExhausted` for reconnect UI
+- Exported `WsPhase` from the package entry
+
 ## [0.2.0] - 2026-08-28
 
 ### Added

@@ -15,6 +15,24 @@ import { useStore } from "./use-store";
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
 
 /**
+ * Provider 連線意圖與重連策略階段（`WsState` 的一環）。
+ *
+ * 與 `status`（WebSocket readyState 映射）正交，補足 UI 無法單靠 `status` 判斷的情境。
+ *
+ * - `idle` — 未連線、未排程重連（初始或手動 `disconnect()`）
+ * - `connecting` — 首次或手動 `connect()` 連線中
+ * - `open` — 已連線
+ * - `reconnecting` — 自動重連週期（等待計時器或連線中）；細節搭配 `status`、`reconnectAttempt`
+ * - `stopped` — 不會再自動重連；`reconnectExhausted` 區分達上限或未啟用重連
+ */
+export type WsPhase =
+  | "idle"
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "stopped";
+
+/**
  * 可訂閱的連線層 state（低頻更新）。
  *
  * 只放：**連線健康**、**outbound 佇列**、**重連** 等連線生命週期資訊。
@@ -26,6 +44,8 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
 export type WsState = {
   /** 連線生命週期狀態 */
   status: WsStatus;
+  /** Provider 連線意圖與重連策略階段 */
+  phase: WsPhase;
   /**
    * 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1）。
    *
@@ -45,8 +65,10 @@ export type WsState = {
 export type WsStoreApi = StoreApi<WsState>;
 
 export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
+  const phase: WsPhase = init === "open" ? "open" : init === "idle" ? "idle" : "connecting";
   return createStore<WsState>({
     status: init,
+    phase,
     reconnectAttempt: 0,
     reconnectExhausted: false,
   });

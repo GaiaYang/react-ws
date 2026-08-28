@@ -89,6 +89,7 @@ describe("createWsContext smoke", () => {
 
     function Probe() {
       const { status } = useWsStore();
+      const phase = useWsStore((s) => s.phase);
       const { sendJson, disconnect, getStatus } = useWsActions();
       useWsEvents("message", (data) => {
         messages.push(data);
@@ -100,6 +101,7 @@ describe("createWsContext smoke", () => {
         "div",
         {
           "data-status": status,
+          "data-phase": phase,
           "data-get": getStatus(),
           onClick: () => {
             sendJson({ type: "ping" });
@@ -110,7 +112,7 @@ describe("createWsContext smoke", () => {
       );
     }
 
-    const { getByText } = render(
+    const { getByText, container } = render(
       createElement(WsProvider, null, createElement(Probe)),
     );
 
@@ -133,6 +135,9 @@ describe("createWsContext smoke", () => {
 
     expect(latestWs().sent).toEqual([JSON.stringify({ type: "ping" })]);
     expect(getByText("closed")).toBeTruthy();
+    expect(
+      container.querySelector("[data-phase]")?.getAttribute("data-phase"),
+    ).toBe("idle");
     expect(closes.some((r) => r === "client disconnect")).toBe(true);
     // intentional disconnect 不排程重連
     expect(MockWebSocket.instances).toHaveLength(1);
@@ -149,11 +154,13 @@ describe("createWsContext smoke", () => {
 
     function Probe() {
       const status = useWsStore((s) => s.status);
+      const phase = useWsStore((s) => s.phase);
       const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
       return createElement(
         "div",
         {
           "data-status": status,
+          "data-phase": phase,
           "data-attempt": reconnectAttempt,
         },
         status,
@@ -165,17 +172,21 @@ describe("createWsContext smoke", () => {
     );
     const attempt = () =>
       container.querySelector("[data-attempt]")?.getAttribute("data-attempt");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
 
     await act(async () => {
       latestWs().open();
     });
     expect(getByText("open")).toBeTruthy();
+    expect(phase()).toBe("open");
     expect(attempt()).toBe("0");
 
     await act(async () => {
       latestWs().drop();
     });
     expect(getByText("closed")).toBeTruthy();
+    expect(phase()).toBe("reconnecting");
     expect(attempt()).toBe("1");
     expect(MockWebSocket.instances).toHaveLength(1);
 
@@ -183,11 +194,13 @@ describe("createWsContext smoke", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(MockWebSocket.instances).toHaveLength(2);
+    expect(phase()).toBe("reconnecting");
 
     await act(async () => {
       latestWs().open();
     });
     expect(getByText("open")).toBeTruthy();
+    expect(phase()).toBe("open");
     expect(attempt()).toBe("0");
   });
 
@@ -206,12 +219,14 @@ describe("createWsContext smoke", () => {
     function Probe() {
       api = useWsActions();
       const status = useWsStore((s) => s.status);
+      const phase = useWsStore((s) => s.phase);
       const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
       const reconnectExhausted = useWsStore((s) => s.reconnectExhausted);
       return createElement(
         "div",
         {
           "data-status": status,
+          "data-phase": phase,
           "data-attempt": reconnectAttempt,
           "data-exhausted": reconnectExhausted,
         },
@@ -224,6 +239,8 @@ describe("createWsContext smoke", () => {
     );
     const attempt = () =>
       container.querySelector("[data-attempt]")?.getAttribute("data-attempt");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
     const exhausted = () =>
       container
         .querySelector("[data-exhausted]")
@@ -253,6 +270,7 @@ describe("createWsContext smoke", () => {
     });
     expect(MockWebSocket.instances).toHaveLength(3);
     expect(getByText("closed")).toBeTruthy();
+    expect(phase()).toBe("stopped");
     expect(attempt()).toBe("2");
     expect(exhausted()).toBe("true");
 
@@ -260,6 +278,7 @@ describe("createWsContext smoke", () => {
       api.connect();
     });
     expect(MockWebSocket.instances).toHaveLength(4);
+    expect(phase()).toBe("connecting");
     expect(attempt()).toBe("0");
     expect(exhausted()).toBe("false");
   });

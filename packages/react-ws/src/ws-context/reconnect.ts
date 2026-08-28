@@ -10,8 +10,8 @@ export interface ReconnectCallbacks {
 }
 
 export interface Reconnect {
-  /** 開始連線時呼叫 */
-  onConnectBegin: () => void;
+  /** 開始連線時呼叫；回傳 `true` 表示由重連計時器觸發 */
+  onConnectBegin: () => boolean;
   /** 連線成功時呼叫 */
   onOpen: () => void;
   /** 意外斷線後嘗試重連；有排重連回 `true` */
@@ -48,8 +48,10 @@ export function createReconnect(
     onConnectBegin() {
       clearTimer();
       intentionalClose = false;
+      const reconnecting = fromTimer;
       if (!fromTimer) resetCycle();
       fromTimer = false;
+      return reconnecting;
     },
 
     onOpen() {

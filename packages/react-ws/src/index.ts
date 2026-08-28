@@ -6,4 +6,4 @@ export {
   type WsContextValue,
   type WsEvents,
 } from "./ws-context";
-export type { WsStatus, WsState } from "./ws-context/ws-store";
+export type { WsPhase, WsStatus, WsState } from "./ws-context/ws-store";
