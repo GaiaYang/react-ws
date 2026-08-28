@@ -5,7 +5,7 @@
 React 用的 WebSocket **連線層**套件。將連線生命週期、可訂閱狀態與訊息事件分離，避免 status 或高頻訊息更新拖垮整棵元件樹。
 
 > **維護者：** [GaiaYang](https://github.com/GaiaYang)  
-> **原始碼（預計）：** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)（monorepo 內路徑 `packages/react-ws`）
+> **原始碼：** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)（monorepo 內路徑 `packages/react-ws`）
 
 ## 特性
 

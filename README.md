@@ -4,7 +4,7 @@
 
 React WebSocket **connection layer** monorepo. Publishable package: **`react-ws-context`** (`packages/react-ws`).
 
-> **Maintainer:** [GaiaYang](https://github.com/GaiaYang) · **Planned repo:** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws) (remote not created yet)
+> **Maintainer:** [GaiaYang](https://github.com/GaiaYang) · **Repository:** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)
 
 ## Layout
 

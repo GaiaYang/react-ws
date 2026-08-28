@@ -5,7 +5,7 @@
 A React **WebSocket connection layer**. It separates connection lifecycle, subscribable state, and message events so status updates or high-frequency messages do not re-render your entire component tree.
 
 > **Maintainer:** [GaiaYang](https://github.com/GaiaYang)  
-> **Source (planned):** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws) (package path: `packages/react-ws`)
+> **Source:** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws) (package path: `packages/react-ws`)
 
 ## Features
 

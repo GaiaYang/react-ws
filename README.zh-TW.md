@@ -4,7 +4,7 @@
 
 React WebSocket **連線層** monorepo。可發佈套件：**`react-ws-context`**（目錄 `packages/react-ws`）。
 
-> 維護者：[GaiaYang](https://github.com/GaiaYang) · 預計 repo：<https://github.com/GaiaYang/react-ws>（尚未建立遠端）
+> 維護者：[GaiaYang](https://github.com/GaiaYang) · 原始碼：<https://github.com/GaiaYang/react-ws>
 
 ## 目錄結構
 

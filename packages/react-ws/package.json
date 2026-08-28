@@ -18,38 +18,26 @@
     "url": "git+https://github.com/GaiaYang/react-ws.git",
     "directory": "packages/react-ws"
   },
-  "homepage": "https://github.com/GaiaYang/react-ws/tree/master/packages/react-ws#readme",
+  "homepage": "https://github.com/GaiaYang/react-ws/tree/main/packages/react-ws#readme",
   "bugs": {
     "url": "https://github.com/GaiaYang/react-ws/issues"
   },
   "type": "module",
   "sideEffects": false,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
     },
     "./stall": {
-      "types": "./src/stall/index.ts",
-      "default": "./src/stall/index.ts"
-    }
-  },
-  "publishConfig": {
-    "main": "./dist/index.mjs",
-    "types": "./dist/index.d.mts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.mts",
-        "import": "./dist/index.mjs",
-        "default": "./dist/index.mjs"
-      },
-      "./stall": {
-        "types": "./dist/stall/index.d.mts",
-        "import": "./dist/stall/index.mjs",
-        "default": "./dist/stall/index.mjs"
-      }
+      "development": "./src/stall/index.ts",
+      "types": "./dist/stall/index.d.mts",
+      "import": "./dist/stall/index.mjs",
+      "default": "./dist/stall/index.mjs"
     }
   },
   "files": [
