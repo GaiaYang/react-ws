@@ -12,13 +12,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.102.3",
-    "clsx": "^2.1.1",
     "next": "16.2.12",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-ws-context": "workspace:*",
-    "tailwind-merge": "^3.6.0"
+    "react-ws-context": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

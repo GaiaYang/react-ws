@@ -24,13 +24,13 @@ React WebSocket **connection layer** monorepo. Publishable package: **`react-ws-
 
 ```bash
 pnpm install          # Install workspace dependencies
-pnpm dev:mock         # Mock server → ws://localhost:8080
-pnpm dev              # Demo → http://localhost:3000
+pnpm dev:mock         # Terminal 1: mock server → ws://localhost:8080
+pnpm dev              # Terminal 2: demo → http://localhost:3000
 pnpm build:pkg        # Build packages/react-ws → dist/
 pnpm typecheck        # Typecheck entire workspace
 ```
 
-The demo depends on `react-ws-context` via `workspace:*`. `pnpm dev` runs `tsdown --watch` alongside the demo; `pnpm publish` ships `dist/`.
+The demo connects to `ws://localhost:8080` — run `dev:mock` and `dev` in separate terminals. `react-ws-context` is consumed via `workspace:*` from compiled `dist/`; `pnpm dev` runs `tsdown --watch` and Next.js in parallel, so package source changes rebuild on save. If you start only the web app without watch, run `pnpm build:pkg` first.
 
 ### Add a dependency to a workspace package
 
