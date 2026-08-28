@@ -27,7 +27,7 @@ pnpm build:pkg        # Build packages/react-ws → dist/
 pnpm typecheck        # Typecheck entire workspace
 ```
 
-The demo depends on `react-ws-context` via `workspace:*`. In dev it reads package `src/` (Next `transpilePackages`); `pnpm publish` ships `dist/`.
+The demo depends on `react-ws-context` via `workspace:*`. `pnpm dev` runs `tsdown --watch` alongside the demo (Next `transpilePackages`); `pnpm publish` ships `dist/`.
 
 ### Add a dependency to a workspace package
 

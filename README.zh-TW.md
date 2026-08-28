@@ -27,7 +27,7 @@ pnpm build:pkg        # 編譯 packages/react-ws → dist/
 pnpm typecheck        # 全 workspace 型別檢查
 ```
 
-Demo 透過 `workspace:*` 依賴 `react-ws-context`，開發時直讀套件 `src/`（Next `transpilePackages`）；`pnpm publish` 時改發 `dist/`。
+Demo 透過 `workspace:*` 依賴 `react-ws-context`；`pnpm dev` 會同時跑 `tsdown --watch` 與 Demo（Next `transpilePackages`），`pnpm publish` 時改發 `dist/`。
 
 ### 為子專案加依賴
 
