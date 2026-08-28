@@ -1,0 +1,29 @@
+{
+  "name": "@react-ws/mock-ws",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local mock WebSocket server for manual / demo testing",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^26.3.0",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.0.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.12",
+    "typescript": "^5",
+    "typescript-eslint": "^8.63.0"
+  }
+}

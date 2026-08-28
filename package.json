@@ -1,0 +1,17 @@
+{
+  "name": "react-ws-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @react-ws/web dev",
+    "dev:mock": "pnpm --filter @react-ws/mock-ws start",
+    "build": "pnpm --filter react-ws-context build && pnpm --filter @react-ws/web build",
+    "build:pkg": "pnpm --filter react-ws-context build",
+    "start": "pnpm --filter @react-ws/web start",
+    "lint": "pnpm -r --if-present lint",
+    "format": "pnpm -r --if-present format",
+    "format:check": "pnpm -r --if-present format:check",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter react-ws-context test"
+  },
+  "packageManager": "pnpm@11.24.0"
+}
