@@ -7,8 +7,8 @@ import {
 import type { LivenessOptions } from "./types";
 
 export interface Liveness {
-  /** 開始探活 */
-  start: (ws: WebSocket) => void;
+  /** 開始探活（socket 由 {@link createLiveness} 的 `getActiveSocket` 取得） */
+  start: () => void;
   /** 停止探活 */
   stop: () => void;
   /** 收到訊息 */
@@ -28,15 +28,16 @@ export function createLiveness(
   let controller: LivenessController | null = null;
 
   return {
-    start(ws) {
+    start() {
       controller?.stop();
       controller = createLivenessController(options, () => {
         const current = getActiveSocket();
         if (current?.readyState === WebSocket.OPEN) current.close();
       });
       const sendPing = createPingSender(options.ping, (data) => {
-        if (ws.readyState !== WebSocket.OPEN) return false;
-        ws.send(JSON.stringify(data));
+        const current = getActiveSocket();
+        if (!current || current.readyState !== WebSocket.OPEN) return false;
+        current.send(JSON.stringify(data));
         return true;
       });
       controller.start(sendPing);

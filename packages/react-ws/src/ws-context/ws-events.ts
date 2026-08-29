@@ -3,29 +3,39 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type Context,
 } from "react";
-import type { Emitter } from "./emitter";
+import { createEmitter, type Emitter } from "./emitter";
 import type { WsEvents } from "./types";
 
+export type WsEventsEmitter = Emitter<WsEvents>;
+
 export function createWsEventsContext() {
-  return createContext<Emitter<WsEvents> | null>(null);
+  return createContext<WsEventsEmitter | null>(null);
 }
 
-export function createUseWsEvents(
-  EmitterCtx: Context<Emitter<WsEvents> | null>,
-) {
+/** 每個 `WsProvider` 各有一份 event emitter */
+export function useWsEventsApi(): WsEventsEmitter {
+  const [emitter] = useState(() => createEmitter<WsEvents>());
+  return emitter;
+}
+
+export function createUseWsEvents(EventsCtx: Context<WsEventsEmitter | null>) {
   function useWsEvents<E extends keyof WsEvents>(
     type: E,
     handler: WsEvents[E],
   ): void {
-    const emitter = useContext(EmitterCtx);
+    const emitter = useContext(EventsCtx);
     if (!emitter) {
       throw new Error("useWsEvents 必須包在對應的 WsProvider 內");
     }
 
     const handlerRef = useRef(handler);
-    handlerRef.current = handler;
+
+    useEffect(() => {
+      handlerRef.current = handler;
+    });
 
     useEffect(() => {
       return emitter.on(type, ((...args: never[]) => {

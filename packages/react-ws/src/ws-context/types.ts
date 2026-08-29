@@ -10,7 +10,7 @@ export interface CreateWsContextOptions {
   /**
    * 是否自動重新連線。
    *
-   *  @default true
+   * @default true
    */
   autoConnect?: boolean;
   /**
@@ -73,7 +73,7 @@ export interface WsContextValue {
    * 傳送 JSON 資料
    *
    * @param data 資料
-   * @returns 是否已送出或已入隊
+   * @returns 是否已送出或已入隊；`JSON.stringify` 失敗（如 circular reference）回傳 `false`
    */
   sendJson: (data: unknown) => boolean;
   /** 建立連線 */

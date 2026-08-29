@@ -6,9 +6,7 @@
 // Source:
 //   - https://github.com/ai/nanoevents/blob/main/index.js
 //   - https://github.com/ai/nanoevents/blob/main/index.d.ts
-// Modifications: 內嵌以達成零 runtime 依賴；新增 useEmitter（React useState 包裝）。
-
-import { useState } from "react";
+// Modifications: 內嵌以達成零 runtime 依賴。
 
 export interface Emitter<
   Events extends { [E in keyof Events]: (...args: never[]) => void },
@@ -36,11 +34,4 @@ export function createEmitter<
       };
     },
   };
-}
-
-export function useEmitter<
-  Events extends { [E in keyof Events]: (...args: never[]) => void },
->(): Emitter<Events> {
-  const [emitter] = useState(() => createEmitter<Events>());
-  return emitter;
 }

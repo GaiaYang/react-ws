@@ -93,6 +93,7 @@ createWsContext(options)
 ```
 
 - **同一應用可多次呼叫 `createWsContext`**，每次產生一組互不共用的 Provider 與 hooks（例如同時連業務 WS 與通知 WS）。
+- **Provider 內部 instance** — `useWsStoreApi`（store）、`useWsEventsApi`（emitter）；actions 在 `WsProvider` 內以 `useMemo` 組裝後注入 Context。
 - **`WsState` 只放連線層、低頻欄位** — 連線健康（`status`、`phase`）、outbound 佇列（如未來 `pendingCount`）、重連（`reconnectAttempt`）。**不放**訊息 payload 或業務資料。
 - **訊息與錯誤事件** — 請用 `useWsEvents`；訊息歷史請自行寫入 state、cache 或外部 store。
 - **連線錯誤不反映在 `WsStatus`** — 請用 `useWsEvents("error", …)` 處理；原生 `error` 事件後通常緊接 `close`。
@@ -141,7 +142,8 @@ createWsContext(options)
 | 行為                        | 說明                                                                                                             |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | mount + `autoConnect: true` | 自動 `connect()`                                                                                                 |
-| unmount                     | 主動關閉連線、停止探活、清空 outbound 佇列，並 emit `close`                                                      |
+| unmount                     | 取消重連、停止探活、清空 outbound 佇列；store 同步為 `status: "closed"`、`phase: "idle"`；關閉 socket 並 emit `close`（reason: `"provider unmount"`） |
+| `disconnect()`              | 同 unmount 的 store 重置（`phase: "idle"`、`status: "closed"`），但不觸發自動重連；emit `close`（reason: `"client disconnect"`）                         |
 | 重連                        | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無 exponential backoff）；`reconnectMax > 0` 時超過次數即停止 |
 | 重連前                      | 若已有舊 socket，先關閉並 emit `close`（reason: `"reconnect"`）                                                  |
 
@@ -156,13 +158,13 @@ createWsContext(options)
 | `send`       | `(data) => boolean`          | 傳送原始資料（`string`、`ArrayBuffer`、`Blob` 等）。已 OPEN 則立即送出；否則視佇列設定入隊 |
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`                                                             |
 | `connect`    | `() => void`                 | 建立連線；若已有連線會先關閉舊 socket                                                      |
-| `disconnect` | `() => void`                 | 主動斷線，**不**觸發自動重連；清空 outbound 佇列                                           |
+| `disconnect` | `() => void`                 | 主動斷線；store 設為 `phase: "idle"`、`status: "closed"`，**不**觸發自動重連；清空 outbound 佇列 |
 | `getStatus`  | `() => WsStatus`             | 讀取當下 status；不訂閱、不觸發渲染                                                        |
 
 **`send` / `sendJson` 回傳值：**
 
 - `true` — 已送出，或已成功入隊
-- `false` — 未 OPEN 且佇列已滿（`outgoingQueueMax > 0` 且達上限），或佇列關閉（`outgoingQueueMax === 0`）
+- `false` — 未 OPEN 且佇列已滿（`outgoingQueueMax > 0` 且達上限），或佇列關閉（`outgoingQueueMax === 0`）；`sendJson` 另含 `JSON.stringify` 失敗（如 circular reference）
 
 ---
 
@@ -252,6 +254,7 @@ const canDisconnect =
 
 - `handler` 以 ref 保存最新引用，callback 重建**不會**導致重新訂閱
 - `type` 變更**會**重新訂閱
+- 意外斷線時，`close` handler 觸發前 store 已更新為 `status: "closed"` 及對應 `phase`（`reconnecting` / `stopped` 等）
 - 需監聽多種事件時，分別呼叫多次 `useWsEvents`
 
 ---
@@ -400,5 +403,5 @@ sendJson(createStallMessage("stall"));
 - **授權：** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
 - **借鑑範圍：**
   - Typed event emitter — 執行期邏輯幾乎對齊 [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js)；型別為本套件收斂版
-  - `useEmitter` 為本套件自行新增（React `useState` 包裝）
-- **對應原始碼：** `src/ws-context/emitter.ts`
+  - `useWsEventsApi` 為本套件自行新增（React `useState` 包裝，見 `ws-events.ts`）
+- **對應原始碼：** `src/ws-context/emitter.ts`、`src/ws-context/ws-events.ts`

@@ -93,6 +93,7 @@ createWsContext(options)
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
+- **Provider instances** — `useWsStoreApi` (store), `useWsEventsApi` (emitter); actions are assembled in `WsProvider` via `useMemo` and passed through Context.
 - **`WsState` holds low-frequency connection data only** — health (`status`, `phase`), outbound queue (e.g. future `pendingCount`), reconnect (`reconnectAttempt`). **Not** message payloads or app data.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own state, cache, or store.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
@@ -141,7 +142,8 @@ Creates, owns, and tears down the native `WebSocket`.
 | Behavior                    | Description                                                                                                                       |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | mount + `autoConnect: true` | Calls `connect()`                                                                                                                 |
-| unmount                     | Closes connection, stops liveness, clears outbound queue, emits `close`                                                           |
+| unmount                     | Cancels reconnect, stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes socket and emits `close` (reason: `"provider unmount"`) |
+| `disconnect()`              | Same store reset as unmount (`phase: "idle"`, `status: "closed"`), no auto-reconnect; emits `close` (reason: `"client disconnect"`)                                            |
 | reconnect                   | Fixed interval when `reconnectMs > 0` and close was not intentional (no exponential backoff); stops after `reconnectMax` if `> 0` |
 | before reconnect            | Closes existing socket and emits `close` (reason: `"reconnect"`)                                                                  |
 
@@ -156,13 +158,13 @@ Must be used inside the matching `WsProvider`. Return value is memoized and **do
 | `send`       | `(data) => boolean`          | Send raw data. Sends immediately when OPEN; otherwise enqueues if configured |
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`                                                 |
 | `connect`    | `() => void`                 | Open connection; closes any existing socket first                            |
-| `disconnect` | `() => void`                 | Intentional close; no auto-reconnect; clears outbound queue                  |
+| `disconnect` | `() => void`                 | Intentional close; sets store to `phase: "idle"`, `status: "closed"`; no auto-reconnect; clears outbound queue |
 | `getStatus`  | `() => WsStatus`             | Read current status; no subscription, no re-render                           |
 
 **`send` / `sendJson` return value:**
 
 - `true` — sent or enqueued
-- `false` — not OPEN and queue full (`outgoingQueueMax > 0`), or queue disabled (`outgoingQueueMax === 0`)
+- `false` — not OPEN and queue full (`outgoingQueueMax > 0`), queue disabled (`outgoingQueueMax === 0`), or `sendJson` failed to `JSON.stringify` (e.g. circular reference)
 
 ---
 
@@ -252,6 +254,7 @@ Must be used inside the matching `WsProvider`. Registers in `useEffect` and unsu
 
 - Handler is kept in a ref — changing the callback does **not** re-subscribe
 - Changing `type` **does** re-subscribe
+- On unintentional close, the store is updated to `status: "closed"` and the appropriate `phase` before the `close` handler runs
 - For multiple events, call `useWsEvents` multiple times
 
 ---
@@ -385,5 +388,5 @@ This package does **not** list zustand or nanoevents as npm dependencies. It inl
 
 - **Author:** [Andrey Sitnik](https://github.com/ai) (`ai`)
 - **License:** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
-- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); `useEmitter` added by this package
-- **File:** `src/ws-context/emitter.ts`
+- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); `useWsEventsApi` added by this package (`ws-events.ts`)
+- **Files:** `src/ws-context/emitter.ts`, `src/ws-context/ws-events.ts`

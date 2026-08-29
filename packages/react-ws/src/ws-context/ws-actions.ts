@@ -1,6 +1,7 @@
 import { createContext, useContext, type Context } from "react";
 import type { WsContextValue } from "./types";
 
+/** actions 無獨立 instance；由 WsProvider 以 useMemo 組裝後注入 Context */
 export function createWsActionsContext() {
   return createContext<WsContextValue | null>(null);
 }

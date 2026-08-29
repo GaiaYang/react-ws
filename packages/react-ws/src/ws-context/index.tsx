@@ -5,9 +5,8 @@ import {
   useRef,
   type PropsWithChildren,
 } from "react";
-import { useEmitter } from "./emitter";
-import { createUseWsEvents, createWsEventsContext } from "./ws-events";
-import type { CreateWsContextOptions, WsContextValue, WsEvents } from "./types";
+import { createUseWsEvents, createWsEventsContext, useWsEventsApi } from "./ws-events";
+import type { CreateWsContextOptions, WsContextValue } from "./types";
 import { useLiveness } from "./liveness/liveness";
 import { useOutgoingQueue } from "./outgoing-queue";
 import {
@@ -15,7 +14,6 @@ import {
   createWsStoreContext,
   useWsStoreApi,
   type WsPhase,
-  type WsStatus,
 } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
 import { useReconnect } from "./reconnect";
@@ -51,17 +49,17 @@ export function createWsContext(options: CreateWsContextOptions) {
     liveness,
   } = options;
 
-  const ActionsCtx = createWsActionsContext();
-  const useWsActions = createUseWsActions(ActionsCtx);
   const StoreCtx = createWsStoreContext();
   const useWsStore = createUseWsStore(StoreCtx);
-  const EmitterCtx = createWsEventsContext();
-  const useWsEvents = createUseWsEvents(EmitterCtx);
+  const ActionsCtx = createWsActionsContext();
+  const useWsActions = createUseWsActions(ActionsCtx);
+  const EventsCtx = createWsEventsContext();
+  const useWsEvents = createUseWsEvents(EventsCtx);
 
   function WsProvider({ children }: PropsWithChildren) {
     const wsRef = useRef<WebSocket | null>(null);
     const store = useWsStoreApi();
-    const emitter = useEmitter<WsEvents>();
+    const emitter = useWsEventsApi();
     const reconnect = useReconnect(reconnectMs, reconnectMax, {
       getAttempt: () => store.getState().reconnectAttempt,
       setAttempt: (reconnectAttempt) => store.setState({ reconnectAttempt }),
@@ -71,40 +69,32 @@ export function createWsContext(options: CreateWsContextOptions) {
     const outgoingQueue = useOutgoingQueue(outgoingQueueMax);
     const livenessSession = useLiveness(liveness, () => wsRef.current);
 
-    const setStatus = useCallback(
-      (status: WsStatus) => {
-        store.setState({ status });
-      },
-      [store],
-    );
-
-    const setPhase = useCallback(
-      (phase: WsPhase) => {
-        store.setState({ phase });
-      },
-      [store],
-    );
-
     const getStatus = useCallback<WsContextValue["getStatus"]>(
       () => store.getState().status,
       [store],
     );
 
-    const disconnect = useCallback<WsContextValue["disconnect"]>(() => {
-      reconnect.cancel();
-      livenessSession.stop();
-      outgoingQueue.clear();
-      setPhase("idle");
-      const ws = wsRef.current;
-      wsRef.current = null;
-      if (ws) {
-        detachAndClose(ws);
-        setStatus("closed");
-        emitter.emit("close", clientCloseEvent("client disconnect"));
-      } else {
-        setStatus("closed");
-      }
-    }, [setStatus, setPhase, emitter, outgoingQueue, livenessSession, reconnect]);
+    /** 主動斷線與 Provider unmount 共用；`reason` 區分 `"client disconnect"` / `"provider unmount"` */
+    const teardown = useCallback(
+      (reason: string) => {
+        reconnect.cancel();
+        livenessSession.stop();
+        outgoingQueue.clear();
+        store.setState({ phase: "idle", status: "closed" });
+        const ws = wsRef.current;
+        wsRef.current = null;
+        if (ws) {
+          detachAndClose(ws);
+          emitter.emit("close", clientCloseEvent(reason));
+        }
+      },
+      [store, emitter, outgoingQueue, livenessSession, reconnect],
+    );
+
+    const disconnect = useCallback<WsContextValue["disconnect"]>(
+      () => teardown("client disconnect"),
+      [teardown],
+    );
 
     const connect = useCallback<WsContextValue["connect"]>(() => {
       if (typeof window === "undefined") return;
@@ -119,8 +109,10 @@ export function createWsContext(options: CreateWsContextOptions) {
         emitter.emit("close", clientCloseEvent("reconnect"));
       }
 
-      setStatus("connecting");
-      setPhase(fromReconnect ? "reconnecting" : "connecting");
+      store.setState({
+        status: "connecting",
+        phase: fromReconnect ? "reconnecting" : "connecting",
+      });
 
       const ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
       wsRef.current = ws;
@@ -128,10 +120,9 @@ export function createWsContext(options: CreateWsContextOptions) {
       ws.onopen = (event) => {
         if (wsRef.current !== ws) return;
         reconnect.onOpen();
-        setStatus("open");
-        setPhase("open");
+        store.setState({ status: "open", phase: "open" });
         outgoingQueue.flush((data) => ws.send(data));
-        livenessSession.start(ws);
+        livenessSession.start();
         emitter.emit("open", event);
       };
 
@@ -150,33 +141,25 @@ export function createWsContext(options: CreateWsContextOptions) {
       ws.onclose = (event) => {
         if (wsRef.current === ws) wsRef.current = null;
         livenessSession.stop();
-        setStatus("closed");
-        emitter.emit("close", event);
         const scheduled = reconnect.scheduleAfterClose();
+        // 意外斷線：先更新 store，再 emit close（handler 可讀到一致的 status / phase）
+        const patch: { status: "closed"; phase?: WsPhase } = { status: "closed" };
         if (scheduled) {
-          setPhase("reconnecting");
+          patch.phase = "reconnecting";
         } else if (store.getState().phase !== "idle") {
-          setPhase("stopped");
+          patch.phase = "stopped";
         }
+        store.setState(patch);
+        emitter.emit("close", event);
       };
-    }, [setStatus, setPhase, emitter, outgoingQueue, livenessSession, reconnect, store]);
+    }, [store, emitter, outgoingQueue, livenessSession, reconnect]);
 
     reconnect.bindOnReconnect(connect);
 
     useEffect(() => {
       if (autoConnect) connect();
-      return () => {
-        reconnect.cancel();
-        livenessSession.stop();
-        outgoingQueue.clear();
-        const ws = wsRef.current;
-        wsRef.current = null;
-        if (ws) {
-          detachAndClose(ws);
-          emitter.emit("close", clientCloseEvent("provider unmount"));
-        }
-      };
-    }, [connect, emitter, outgoingQueue, livenessSession, reconnect]);
+      return () => teardown("provider unmount");
+    }, [connect, teardown]);
 
     const send = useCallback<WsContextValue["send"]>(
       (data) => {
@@ -191,25 +174,25 @@ export function createWsContext(options: CreateWsContextOptions) {
     );
 
     const sendJson = useCallback<WsContextValue["sendJson"]>(
-      (data) => send(JSON.stringify(data)),
+      (data) => {
+        try {
+          return send(JSON.stringify(data));
+        } catch {
+          return false;
+        }
+      },
       [send],
     );
 
     const actions = useMemo<WsContextValue>(
-      () => ({
-        send,
-        sendJson,
-        connect,
-        disconnect,
-        getStatus,
-      }),
+      () => ({ send, sendJson, connect, disconnect, getStatus }),
       [send, sendJson, connect, disconnect, getStatus],
     );
 
     return (
       <ActionsCtx.Provider value={actions}>
         <StoreCtx.Provider value={store}>
-          <EmitterCtx.Provider value={emitter}>{children}</EmitterCtx.Provider>
+          <EventsCtx.Provider value={emitter}>{children}</EventsCtx.Provider>
         </StoreCtx.Provider>
       </ActionsCtx.Provider>
     );

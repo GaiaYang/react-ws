@@ -27,7 +27,7 @@ export function createStore<State extends object>(
     setState: (partial) => {
       const nextPartial =
         typeof partial === "function" ? partial(state) : partial;
-      if (Object.is(nextPartial, state)) return;
+      if (!hasPartialChanged(state, nextPartial)) return;
       const prev = state;
       state = Object.assign({}, state, nextPartial);
       for (const listener of listeners) listener(state, prev);
@@ -39,4 +39,17 @@ export function createStore<State extends object>(
       };
     },
   };
+}
+
+/** partial 內所有 key 值與 state 相同則視為無變更，不通知訂閱者 */
+function hasPartialChanged<State extends object>(
+  state: State,
+  partial: Partial<State>,
+): boolean {
+  for (const [key, value] of Object.entries(partial)) {
+    if (!Object.is(state[key as keyof State], value)) {
+      return true;
+    }
+  }
+  return false;
 }

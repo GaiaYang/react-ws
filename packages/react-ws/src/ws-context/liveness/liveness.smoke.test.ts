@@ -81,7 +81,7 @@ describe("liveness", () => {
       () => active,
     );
 
-    session.start(ws);
+    session.start();
     vi.advanceTimersByTime(50);
     expect(close).toHaveBeenCalledTimes(1);
     session.stop();

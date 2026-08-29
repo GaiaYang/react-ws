@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-29
+
+### Fixed
+
+- Store `setState` skips listener notification when partial values are unchanged (shallow compare on updated keys)
+- Provider unmount syncs store to `status: "closed"` and `phase: "idle"` (consistent with `disconnect()`)
+- Liveness ping and timeout both use `getActiveSocket()` for the active socket
+- `sendJson` returns `false` when `JSON.stringify` fails (e.g. circular reference) instead of throwing
+- `useWsEvents` handler ref sync moved into `useEffect` (complies with `react-hooks/refs`)
+
+### Changed
+
+- Shared `teardown()` for `disconnect()` and provider unmount cleanup
+- On unintentional close, store updates before `close` is emitted so handlers see consistent `status` / `phase`
+- Batch `status` and `phase` store updates where both change together
+- `Liveness.start()` takes no socket argument; uses `getActiveSocket()` at runtime
+- Internal layout: `useWsEventsApi` in `ws-events.ts` (`emitter.ts` is React-free); aligned Context module structure (`ws-store`, `ws-events`, `ws-actions`)
+
+### Added
+
+- Store smoke test for `setState` deduplication
+
 ## [0.3.0] - 2026-08-29
 
 ### Added

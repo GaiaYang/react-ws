@@ -65,7 +65,8 @@ export type WsState = {
 export type WsStoreApi = StoreApi<WsState>;
 
 export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
-  const phase: WsPhase = init === "open" ? "open" : init === "idle" ? "idle" : "connecting";
+  const phase: WsPhase =
+    init === "open" || init === "idle" ? init : "connecting";
   return createStore<WsState>({
     status: init,
     phase,
@@ -74,14 +75,14 @@ export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
   });
 }
 
+export function createWsStoreContext() {
+  return createContext<WsStoreApi | null>(null);
+}
+
 /** 每個 `WsProvider` 各有一份 {@link WsState} store */
 export function useWsStoreApi(): WsStoreApi {
   const [store] = useState(() => createWsStore());
   return store;
-}
-
-export function createWsStoreContext() {
-  return createContext<WsStoreApi | null>(null);
 }
 
 /** 訂閱 {@link WsState}；建議以 selector 只取需要的連線層欄位。 */
