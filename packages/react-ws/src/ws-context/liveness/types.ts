@@ -1,11 +1,11 @@
-/** 探活選項 */
+/** 探活設定 */
 export interface LivenessOptions {
-  /** 探活間隔（ms） */
+  /** ping 間隔（毫秒） */
   intervalMs: number;
-  /** 探活超時（ms） */
+  /** 等待 pong 逾時（毫秒） */
   timeoutMs: number;
-  /** 探活訊息 */
+  /** ping 內容；函式則每次動態產生 */
   ping: unknown | (() => unknown);
-  /** 探活回應判定 */
+  /** 判定傳入資料是否為 pong */
   isPong: (data: unknown) => boolean;
 }

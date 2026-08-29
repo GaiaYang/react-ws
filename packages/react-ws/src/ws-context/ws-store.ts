@@ -26,11 +26,7 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
  * - `stopped` — 不會再自動重連；`reconnectExhausted` 區分達上限或未啟用重連
  */
 export type WsPhase =
-  | "idle"
-  | "connecting"
-  | "open"
-  | "reconnecting"
-  | "stopped";
+  "idle" | "connecting" | "open" | "reconnecting" | "stopped";
 
 /**
  * 可訂閱的連線層 state（低頻更新）。

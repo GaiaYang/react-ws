@@ -5,7 +5,11 @@ import {
   useRef,
   type PropsWithChildren,
 } from "react";
-import { createUseWsEvents, createWsEventsContext, useWsEventsApi } from "./ws-events";
+import {
+  createUseWsEvents,
+  createWsEventsContext,
+  useWsEventsApi,
+} from "./ws-events";
 import type { CreateWsContextOptions, WsContextValue } from "./types";
 import { useLiveness } from "./liveness/liveness";
 import { useOutgoingQueue } from "./outgoing-queue";
@@ -20,6 +24,7 @@ import { useReconnect } from "./reconnect";
 import { clientCloseEvent, detachAndClose } from "./socket";
 
 export type { CreateWsContextOptions, WsContextValue, WsEvents } from "./types";
+export type { LivenessOptions } from "./liveness/types";
 
 function defaultParse(data: MessageEvent["data"]): unknown {
   if (typeof data !== "string") return data;
@@ -74,7 +79,13 @@ export function createWsContext(options: CreateWsContextOptions) {
       [store],
     );
 
-    /** 主動斷線與 Provider unmount 共用；`reason` 區分 `"client disconnect"` / `"provider unmount"` */
+    /**
+     * 主動斷線與 Provider unmount 共用 cleanup。
+     *
+     * 關閉 socket 時以 `reason` 寫入 synthetic `close` 事件：
+     * - `"client disconnect"` — `disconnect()`
+     * - `"provider unmount"` — `WsProvider` unmount
+     */
     const teardown = useCallback(
       (reason: string) => {
         reconnect.cancel();
@@ -143,7 +154,9 @@ export function createWsContext(options: CreateWsContextOptions) {
         livenessSession.stop();
         const scheduled = reconnect.scheduleAfterClose();
         // 意外斷線：先更新 store，再 emit close（handler 可讀到一致的 status / phase）
-        const patch: { status: "closed"; phase?: WsPhase } = { status: "closed" };
+        const patch: { status: "closed"; phase?: WsPhase } = {
+          status: "closed",
+        };
         if (scheduled) {
           patch.phase = "reconnecting";
         } else if (store.getState().phase !== "idle") {

@@ -41,7 +41,6 @@ export function createStore<State extends object>(
   };
 }
 
-/** partial 內所有 key 值與 state 相同則視為無變更，不通知訂閱者 */
 function hasPartialChanged<State extends object>(
   state: State,
   partial: Partial<State>,

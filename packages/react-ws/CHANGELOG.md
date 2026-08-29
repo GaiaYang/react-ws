@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-30
+
+### Added
+
+- Export `LivenessOptions` from the package entry
+
 ### Changed
 
-- README (EN / zh-TW): align with 0.4.0 behavior — store dedup, close event ordering, unmount/disconnect cleanup, liveness JSON ping, selector guidance; clarify internal vs public API
+- README (EN / zh-TW): align structure and wording; fix immutable-config URL guidance; clarify render isolation, stall parsing, and `WsProvider` lifecycle
+- JSDoc (`CreateWsContextOptions`, `WsContextValue`): clearer field descriptions; fix `autoConnect` wording
 
 ## [0.4.0] - 2026-08-29
 

@@ -3,6 +3,7 @@
 export {
   createWsContext,
   type CreateWsContextOptions,
+  type LivenessOptions,
   type WsContextValue,
   type WsEvents,
 } from "./ws-context";
