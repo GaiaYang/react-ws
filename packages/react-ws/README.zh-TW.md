@@ -93,7 +93,7 @@ createWsContext(options)
 ```
 
 - **同一應用可多次呼叫 `createWsContext`**，每次產生一組互不共用的 Provider 與 hooks（例如同時連業務 WS 與通知 WS）。
-- **Provider 內部 instance** — `useWsStoreApi`（store）、`useWsEventsApi`（emitter）；actions 在 `WsProvider` 內以 `useMemo` 組裝後注入 Context。
+- **Provider 內部** — 各 `WsProvider` 持有獨立的 store 與 event emitter（非公開 API）；actions 在 `WsProvider` 內以 `useMemo` 組裝後注入 Context。
 - **`WsState` 只放連線層、低頻欄位** — 連線健康（`status`、`phase`）、outbound 佇列（如未來 `pendingCount`）、重連（`reconnectAttempt`）。**不放**訊息 payload 或業務資料。
 - **訊息與錯誤事件** — 請用 `useWsEvents`；訊息歷史請自行寫入 state、cache 或外部 store。
 - **連線錯誤不反映在 `WsStatus`** — 請用 `useWsEvents("error", …)` 處理；原生 `error` 事件後通常緊接 `close`。
@@ -142,8 +142,8 @@ createWsContext(options)
 | 行為                        | 說明                                                                                                             |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | mount + `autoConnect: true` | 自動 `connect()`                                                                                                 |
-| unmount                     | 取消重連、停止探活、清空 outbound 佇列；store 同步為 `status: "closed"`、`phase: "idle"`；關閉 socket 並 emit `close`（reason: `"provider unmount"`） |
-| `disconnect()`              | 同 unmount 的 store 重置（`phase: "idle"`、`status: "closed"`），但不觸發自動重連；emit `close`（reason: `"client disconnect"`）                         |
+| unmount                     | 取消重連（`reconnectAttempt` 歸零）、停止探活、清空 outbound 佇列；store 同步為 `status: "closed"`、`phase: "idle"`；關閉 socket 並 emit `close`（reason: `"provider unmount"`） |
+| `disconnect()`              | 同 unmount 的 cleanup 與 store 重置，但不觸發自動重連；emit `close`（reason: `"client disconnect"`）                         |
 | 重連                        | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無 exponential backoff）；`reconnectMax > 0` 時超過次數即停止 |
 | 重連前                      | 若已有舊 socket，先關閉並 emit `close`（reason: `"reconnect"`）                                                  |
 
@@ -156,7 +156,7 @@ createWsContext(options)
 | 方法         | 簽名                         | 說明                                                                                       |
 | ------------ | ---------------------------- | ------------------------------------------------------------------------------------------ |
 | `send`       | `(data) => boolean`          | 傳送原始資料（`string`、`ArrayBuffer`、`Blob` 等）。已 OPEN 則立即送出；否則視佇列設定入隊 |
-| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`                                                             |
+| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`；序列化失敗回傳 `false`                                       |
 | `connect`    | `() => void`                 | 建立連線；若已有連線會先關閉舊 socket                                                      |
 | `disconnect` | `() => void`                 | 主動斷線；store 設為 `phase: "idle"`、`status: "closed"`，**不**觸發自動重連；清空 outbound 佇列 |
 | `getStatus`  | `() => WsStatus`             | 讀取當下 status；不訂閱、不觸發渲染                                                        |
@@ -170,9 +170,11 @@ createWsContext(options)
 
 ### `useWsStore()`
 
-必須在對應的 `WsProvider` 內使用。底層以 `useSyncExternalStore` 訂閱外部 store。
+必須在對應的 `WsProvider` 內使用。底層以 `useSyncExternalStore` 訂閱外部 store；**partial 內欄位值未變時不會通知訂閱者**（shallow compare）。
 
 `WsState` 定位：**連線健康／outbound 佇列／重連** 等低頻、連線生命週期資訊。高頻訊息請用 `useWsEvents("message", …)`，不要寫進 store。
+
+**建議：** 以 selector 只訂閱需要的欄位（例如 `(s) => s.phase`）。不帶 selector 的 `useWsStore()` 會訂閱整份 state，任一欄位變更都會觸發 re-render。
 
 ```ts
 useWsStore(): WsState
@@ -255,6 +257,7 @@ const canDisconnect =
 - `handler` 以 ref 保存最新引用，callback 重建**不會**導致重新訂閱
 - `type` 變更**會**重新訂閱
 - 意外斷線時，`close` handler 觸發前 store 已更新為 `status: "closed"` 及對應 `phase`（`reconnecting` / `stopped` 等）
+- 主動 `disconnect()` 或 Provider unmount 亦同：先更新 store，再 emit `close`
 - 需監聽多種事件時，分別呼叫多次 `useWsEvents`
 
 ---
@@ -290,7 +293,7 @@ createWsContext({
 });
 ```
 
-探活期間，`onmessage` 收到的每一筆資料都會先經 `isPong` 判定；若為 pong 則重置逾時計時，並照常 emit `"message"` 事件。
+探活期間，`onmessage` 收到的每一筆資料都會先經 `isPong` 判定；若為 pong 則重置逾時計時，並照常 emit `"message"` 事件。ping payload 一律以 `JSON.stringify` 送出（僅支援 JSON 格式）。
 
 ---
 
@@ -303,8 +306,8 @@ createWsContext({
 | `send` 且 socket 未 OPEN | 訊息入隊（FIFO）               |
 | 佇列已滿                 | 回傳 `false`，**不**丟棄舊訊息 |
 | socket OPEN              | 依序 flush 全部佇列            |
-| `disconnect()`           | 清空佇列                       |
-| `WsProvider` unmount     | 清空佇列                       |
+| `disconnect()`           | 清空佇列；store 設為 `idle` / `closed`（見 `WsProvider`） |
+| `WsProvider` unmount     | 清空佇列；store 同步（見 `WsProvider`）                     |
 | 自動重連等待期間         | **保留**佇列                   |
 
 ---
@@ -375,6 +378,7 @@ sendJson(createStallMessage("stall"));
 | 錯誤狀態       | 不設 `"error"` status；請監聽 `useWsEvents("error")`                                       |
 | `WsState` 範圍 | 只含連線健康／佇列／重連；訊息與業務資料不走 store                                         |
 | 訊息與渲染     | 只呼叫 `useWsActions` 的元件不會因 store 或 message 重繪                                   |
+| Store 更新     | 相同欄位值重複寫入不觸發訂閱；建議以 selector 訂閱                                        |
 
 ---
 
@@ -393,7 +397,7 @@ sendJson(createStallMessage("stall"));
 - **作者／維護：** [pmndrs](https://github.com/pmndrs)（Poimandres）
 - **授權：** [MIT](https://github.com/pmndrs/zustand/blob/main/LICENSE)
 - **借鑑範圍：**
-  - 外部 store（`getState` / `setState` / `subscribe` / `getInitialState`）— 靈感與行為對齊 [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts)，非完整搬移（無 middleware、replace、initializer factory）
+  - 外部 store（`getState` / `setState` / `subscribe` / `getInitialState`）— 靈感與行為對齊 [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts)，非完整搬移（無 middleware、replace、initializer factory）；`setState` 另含 partial shallow dedup（值未變不通知）
   - React 訂閱 hook — 靈感來自 [`react.ts`](https://github.com/pmndrs/zustand/blob/main/src/react.ts) 的 `useStore`（selector 必填、無 `useDebugValue`）
 - **對應原始碼：** `src/ws-context/store.ts`、`src/ws-context/use-store.ts`
 
@@ -403,5 +407,5 @@ sendJson(createStallMessage("stall"));
 - **授權：** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
 - **借鑑範圍：**
   - Typed event emitter — 執行期邏輯幾乎對齊 [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js)；型別為本套件收斂版
-  - `useWsEventsApi` 為本套件自行新增（React `useState` 包裝，見 `ws-events.ts`）
+  - React 訂閱包裝 — 本套件自行新增（`ws-events.ts`）
 - **對應原始碼：** `src/ws-context/emitter.ts`、`src/ws-context/ws-events.ts`

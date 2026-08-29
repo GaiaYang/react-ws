@@ -93,7 +93,7 @@ createWsContext(options)
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
-- **Provider instances** — `useWsStoreApi` (store), `useWsEventsApi` (emitter); actions are assembled in `WsProvider` via `useMemo` and passed through Context.
+- **Provider internals** — each `WsProvider` owns a separate store and event emitter (not public API); actions are assembled in `WsProvider` via `useMemo` and passed through Context.
 - **`WsState` holds low-frequency connection data only** — health (`status`, `phase`), outbound queue (e.g. future `pendingCount`), reconnect (`reconnectAttempt`). **Not** message payloads or app data.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own state, cache, or store.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
@@ -142,8 +142,8 @@ Creates, owns, and tears down the native `WebSocket`.
 | Behavior                    | Description                                                                                                                       |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | mount + `autoConnect: true` | Calls `connect()`                                                                                                                 |
-| unmount                     | Cancels reconnect, stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes socket and emits `close` (reason: `"provider unmount"`) |
-| `disconnect()`              | Same store reset as unmount (`phase: "idle"`, `status: "closed"`), no auto-reconnect; emits `close` (reason: `"client disconnect"`)                                            |
+| unmount                     | Cancels reconnect (`reconnectAttempt` reset), stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes socket and emits `close` (reason: `"provider unmount"`) |
+| `disconnect()`              | Same cleanup and store reset as unmount, no auto-reconnect; emits `close` (reason: `"client disconnect"`)                                                                                               |
 | reconnect                   | Fixed interval when `reconnectMs > 0` and close was not intentional (no exponential backoff); stops after `reconnectMax` if `> 0` |
 | before reconnect            | Closes existing socket and emits `close` (reason: `"reconnect"`)                                                                  |
 
@@ -156,7 +156,7 @@ Must be used inside the matching `WsProvider`. Return value is memoized and **do
 | Method       | Signature                    | Description                                                                  |
 | ------------ | ---------------------------- | ---------------------------------------------------------------------------- |
 | `send`       | `(data) => boolean`          | Send raw data. Sends immediately when OPEN; otherwise enqueues if configured |
-| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`                                                 |
+| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`; returns `false` if serialization fails |
 | `connect`    | `() => void`                 | Open connection; closes any existing socket first                            |
 | `disconnect` | `() => void`                 | Intentional close; sets store to `phase: "idle"`, `status: "closed"`; no auto-reconnect; clears outbound queue |
 | `getStatus`  | `() => WsStatus`             | Read current status; no subscription, no re-render                           |
@@ -170,9 +170,11 @@ Must be used inside the matching `WsProvider`. Return value is memoized and **do
 
 ### `useWsStore()`
 
-Must be used inside the matching `WsProvider`. Uses `useSyncExternalStore` under the hood.
+Must be used inside the matching `WsProvider`. Uses `useSyncExternalStore` under the hood; **partial updates with unchanged values do not notify subscribers** (shallow compare).
 
 `WsState` is for **connection health / outbound queue / reconnect** — low-frequency lifecycle data. For high-frequency messages, use `useWsEvents("message", …)`, not the store.
+
+**Tip:** use a selector to subscribe only to the fields you need (e.g. `(s) => s.phase`). `useWsStore()` without a selector subscribes to the full state — any field change triggers a re-render.
 
 ```ts
 useWsStore(): WsState
@@ -224,7 +226,7 @@ Maps to the current WebSocket connection state (similar to readyState). Does **n
 
 `status` and `phase` often change together but mean different things. For example, `phase === "reconnecting"` with `status === "closed"` means waiting for the reconnect timer; `status === "connecting"` means the timer fired and a connect attempt is in progress.
 
-**Tip:** use a selector to subscribe to only the fields you need.
+**Example:**
 
 ```tsx
 const phase = useWsStore((s) => s.phase);
@@ -255,6 +257,7 @@ Must be used inside the matching `WsProvider`. Registers in `useEffect` and unsu
 - Handler is kept in a ref — changing the callback does **not** re-subscribe
 - Changing `type` **does** re-subscribe
 - On unintentional close, the store is updated to `status: "closed"` and the appropriate `phase` before the `close` handler runs
+- Intentional `disconnect()` or provider unmount follows the same order: store first, then `close`
 - For multiple events, call `useWsEvents` multiple times
 
 ---
@@ -290,7 +293,7 @@ createWsContext({
 });
 ```
 
-Every incoming message is checked with `isPong`; a pong resets the timeout timer and still emits `"message"`.
+Every incoming message is checked with `isPong`; a pong resets the timeout timer and still emits `"message"`. Ping payloads are always sent via `JSON.stringify` (JSON only).
 
 ---
 
@@ -303,8 +306,8 @@ When `outgoingQueueMax > 0`:
 | `send` while not OPEN      | Enqueue (FIFO)                                    |
 | Queue full                 | Returns `false`; does **not** drop older messages |
 | Socket OPEN                | Flush entire queue in order                       |
-| `disconnect()`             | Clear queue                                       |
-| `WsProvider` unmount       | Clear queue                                       |
+| `disconnect()`             | Clear queue; store set to `idle` / `closed` (see `WsProvider`) |
+| `WsProvider` unmount       | Clear queue; store synced (see `WsProvider`)                   |
 | Waiting for auto-reconnect | **Keep** queue                                    |
 
 ---
@@ -362,6 +365,7 @@ import {
 | Error status     | No `"error"` in `WsStatus`; use `useWsEvents("error")`                         |
 | `WsState` scope  | Health / queue / reconnect only — not messages or app data                     |
 | Rendering        | Components that only call `useWsActions` do not re-render on store or messages |
+| Store updates    | Repeated writes of the same field values do not notify; prefer selectors       |
 
 ---
 
@@ -380,7 +384,7 @@ This package does **not** list zustand or nanoevents as npm dependencies. It inl
 - **Maintainer:** [pmndrs](https://github.com/pmndrs) (Poimandres)
 - **License:** [MIT](https://github.com/pmndrs/zustand/blob/main/LICENSE)
 - **Adapted from:**
-  - External store API — aligned with [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts) (subset only)
+  - External store API — aligned with [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts) (subset only; no middleware, replace, or initializer factory); `setState` adds partial shallow dedup (unchanged values skip notification)
   - React subscription — inspired by [`react.ts`](https://github.com/pmndrs/zustand/blob/main/src/react.ts) `useStore`
 - **Files:** `src/ws-context/store.ts`, `src/ws-context/use-store.ts`
 
@@ -388,5 +392,5 @@ This package does **not** list zustand or nanoevents as npm dependencies. It inl
 
 - **Author:** [Andrey Sitnik](https://github.com/ai) (`ai`)
 - **License:** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
-- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); `useWsEventsApi` added by this package (`ws-events.ts`)
+- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); React subscription wrapper added in `ws-events.ts`
 - **Files:** `src/ws-context/emitter.ts`, `src/ws-context/ws-events.ts`

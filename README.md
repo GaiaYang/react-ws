@@ -50,7 +50,7 @@ pnpm add react-ws-context react
 
 ## Package usage (summary)
 
-Full API docs: **[`packages/react-ws/README.md`](./packages/react-ws/README.md)** (English) · **[繁中](./packages/react-ws/README.zh-TW.md)**
+Full API docs: **[`packages/react-ws/README.md`](./packages/react-ws/README.md)** (English) · **[繁中](./packages/react-ws/README.zh-TW.md)** · **[Changelog](./packages/react-ws/CHANGELOG.md)**
 
 ```tsx
 "use client";

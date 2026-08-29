@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README (EN / zh-TW): align with 0.4.0 behavior — store dedup, close event ordering, unmount/disconnect cleanup, liveness JSON ping, selector guidance; clarify internal vs public API
+
 ## [0.4.0] - 2026-08-29
 
 ### Fixed

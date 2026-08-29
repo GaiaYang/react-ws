@@ -50,7 +50,7 @@ pnpm add react-ws-context react
 
 ## 套件用法（摘要）
 
-完整 API 文件見 **[`packages/react-ws/README.zh-TW.md`](./packages/react-ws/README.zh-TW.md)**（繁中）· **[English](./packages/react-ws/README.md)**
+完整 API 文件見 **[`packages/react-ws/README.zh-TW.md`](./packages/react-ws/README.zh-TW.md)**（繁中）· **[English](./packages/react-ws/README.md)** · **[Changelog](./packages/react-ws/CHANGELOG.md)**
 
 ```tsx
 "use client";
