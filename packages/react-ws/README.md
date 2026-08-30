@@ -14,9 +14,9 @@ A React **WebSocket connection-layer** package. It separates connection lifecycl
 
 - **Zero runtime dependencies** — only `react >= 18` as a peer dependency
 - **Frozen config** — `url`, `reconnectMs`, etc. are fixed at `createWsContext`; use `connect` / `disconnect` at runtime
-- **Render isolation** — connection-layer state (health / queue / reconnect) lives in an external store; messages are delivered through an event emitter and subscribed via `useWsEvents` (not written into React state)
-- **Optional liveness** — periodic ping / pong; closes the socket on timeout to trigger reconnect
-- **Optional outbound queue** — buffers messages while not OPEN, flushes on connect
+- **Render isolation** — connection-layer state (health / reconnect) is subscribed via `useWsStore`; messages via `useWsEvents` (not written into React state)
+- **Optional liveness** — periodic ping / pong; closes the socket on timeout (may trigger reconnect if enabled)
+- **Optional outbound queue** — buffers messages while not connected; sends the queue in order on connect
 
 ## Requirements
 
@@ -88,13 +88,12 @@ createWsContext(options)
         │
         ├── WsProvider      WebSocket instance, reconnect, liveness, outbound queue
         ├── useWsActions()  send / connect / disconnect / getStatus — no re-renders
-        ├── useWsStore()    connection-layer state: health / queue / reconnect
+        ├── useWsStore()    connection-layer state: health / reconnect
         └── useWsEvents()   open / message / error / close
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
-- **Provider internals** — each `WsProvider` owns a separate store and event emitter (not public API); actions are assembled in `WsProvider` via `useMemo` and passed through Context.
-- **`WsState` holds low-frequency connection data only** — health (`status`, `phase`), outbound queue (e.g. future `pendingCount`), reconnect (`reconnectAttempt`). **Not** message payloads or app data.
+- **`WsState` holds low-frequency connection data only** — health (`status`, `phase`) and reconnect progress (`reconnectAttempt`, `reconnectExhausted`). **Not** message payloads or app data.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own state, cache, or store.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
 
@@ -115,7 +114,7 @@ Creates a `WsProvider` and hooks bound to the same connection config.
 | `autoConnect`      | `boolean`                                 | `true`     | Auto-connect when `WsProvider` loads                                                      |
 | `reconnectMs`      | `number`                                  | `0`        | Reconnect delay (ms) after unintentional close; `0` disables reconnect                    |
 | `reconnectMax`     | `number`                                  | `0`        | Max auto-reconnects after unintentional close; `0` unlimited (requires `reconnectMs > 0`) |
-| `outgoingQueueMax` | `number`                                  | `0`        | Max outbound queue size while not OPEN; `0` disables the queue                            |
+| `outgoingQueueMax` | `number`                                  | `0`        | Max outbound queue size while not connected; `0` disables the queue                            |
 | `parse`            | `(data: MessageEvent["data"]) => unknown` | see below  | Transform raw `MessageEvent.data`                                                         |
 | `liveness`         | `LivenessOptions`                         | —          | Liveness / heartbeat config; omit to disable                                              |
 
@@ -142,20 +141,20 @@ Creates, owns, and tears down the native `WebSocket`.
 | Behavior                                 | Description                                                                                                                                                                                                                      |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `WsProvider` loads + `autoConnect: true` | Auto-connects                                                                                                                                                                                                                    |
-| unmount                                  | Cancels reconnect (`reconnectAttempt` and `reconnectExhausted` reset), stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes socket and emits `close` (reason: `"provider unmount"`) |
-| `disconnect()`                           | Same cleanup and store reset as unmount, no auto-reconnect; emits `close` (reason: `"client disconnect"`)                                                                                                                        |
+| unmount                                  | Cancels reconnect (`reconnectAttempt` and `reconnectExhausted` reset), stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes the socket and fires `close` if one exists (reason: `"provider unmount"`) |
+| `disconnect()`                           | Same cleanup and store reset as unmount, no auto-reconnect; fires `close` if a socket exists (reason: `"client disconnect"`)                                                                                                                     |
 | reconnect                                | Fixed interval when `reconnectMs > 0` and close was not intentional (no exponential backoff); stops after `reconnectMax` if `> 0`                                                                                                |
-| `connect()` with existing socket         | Closes the previous socket and emits `close` (reason: `"reconnect"`) before opening a new one (manual connect or auto-reconnect)                                                                                                 |
+| `connect()` with existing socket         | Closes the previous socket and fires `close` (reason: `"reconnect"`) before opening a new one (manual connect or auto-reconnect)                                                                                                                 |
 
 ---
 
 ### `useWsActions(): WsContextValue`
 
-Must be used inside the matching `WsProvider`. Return value is memoized and **does not** re-render on store or message updates.
+Must be used inside the matching `WsProvider`. Returned actions keep a stable reference and **do not** re-render on store or message updates.
 
 | Method       | Signature                    | Description                                                                                                          |
 | ------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `send`       | `(data) => boolean`          | Send raw data (`string`, `ArrayBuffer`, `Blob`, etc.). Sends immediately when OPEN; otherwise enqueues if configured |
+| `send`       | `(data) => boolean`          | Send raw data (`string`, `ArrayBuffer`, `Blob`, etc.). Sends immediately when connected; otherwise enqueues if configured |
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`; same return semantics as `send`; `false` if not serializable                           |
 | `connect`    | `() => void`                 | Open connection; closes any existing socket first (see `WsProvider`)                                                 |
 | `disconnect` | `() => void`                 | Intentional close; sets store to `phase: "idle"`, `status: "closed"`; no auto-reconnect; clears outbound queue       |
@@ -170,9 +169,9 @@ Must be used inside the matching `WsProvider`. Return value is memoized and **do
 
 ### `useWsStore()`
 
-Must be used inside the matching `WsProvider`. Uses `useSyncExternalStore` under the hood; **partial updates with unchanged values do not notify subscribers** (shallow compare).
+Must be used inside the matching `WsProvider`. Subscribes via `useSyncExternalStore`; **re-renders are skipped when field values are unchanged**.
 
-`WsState` is for **connection health / outbound queue / reconnect** — low-frequency lifecycle data. For high-frequency messages, use `useWsEvents("message", …)`, not the store.
+`WsState` is for **connection health / reconnect** — low-frequency lifecycle data. For high-frequency messages, use `useWsEvents("message", …)`, not the store.
 
 **Tip:** use a selector to subscribe only to the fields you need (e.g. `(s) => s.phase`). `useWsStore()` without a selector subscribes to the full state — any field change triggers a re-render.
 
@@ -186,7 +185,7 @@ useWsStore<T>(selector: (state: WsState) => T): T
 ```ts
 interface WsState {
   status: WsStatus;
-  /** Provider connection intent and reconnect strategy; orthogonal to `status` */
+  /** Provider connection intent and reconnect strategy; separate from `status` in meaning */
   phase: WsPhase;
   /** Reconnects scheduled this cycle (+1 on unintentional close, not on success) */
   reconnectAttempt: number;
@@ -197,11 +196,11 @@ interface WsState {
 }
 ```
 
-| Belongs in store                                                                                              | Does not belong                              |
-| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `status`, `phase`, reconnect progress (`reconnectAttempt` / `reconnectExhausted`), liveness / stall summaries | `lastMessage`, message history, app payloads |
+| Belongs in store                                              | Does not belong                              |
+| ------------------------------------------------------------- | -------------------------------------------- |
+| `status`, `phase`, `reconnectAttempt`, `reconnectExhausted`   | `lastMessage`, message history, app payloads |
 
-`CreateWsContextOptions` (e.g. `url`, `reconnectMax`) are frozen at `createWsContext` and are **not** in `WsState`. For UI like `n/max`, keep the config alongside the store fields you subscribe to.
+Options like `url` and `reconnectMax` are fixed at `createWsContext` and are **not** in `WsState`. To show UI like "attempt n of m", keep those config values alongside your component state.
 
 #### `WsStatus`
 
@@ -222,7 +221,7 @@ Maps to the current WebSocket connection state (similar to readyState). Does **n
 | `connecting`   | First connect or manual `connect()` in progress                                                    |
 | `open`         | Connected                                                                                          |
 | `reconnecting` | Auto-reconnect cycle (waiting for timer or connecting); pair with `status`, `reconnectAttempt`     |
-| `stopped`      | Will not auto-reconnect; use `reconnectExhausted` to distinguish max retries vs reconnect disabled |
+| `stopped`      | Will not auto-reconnect; `reconnectExhausted === true` means `reconnectMax` was hit, `false` usually means `reconnectMs === 0` (reconnect disabled) |
 
 `status` and `phase` often change together but mean different things. For example, `phase === "reconnecting"` with `status === "closed"` means waiting for the reconnect timer; `status === "connecting"` means the timer fired and a connect attempt is in progress.
 
@@ -243,7 +242,7 @@ const canDisconnect =
 
 ### `useWsEvents(type, handler)`
 
-Must be used inside the matching `WsProvider`. Registers in `useEffect` and unsubscribes on unmount.
+Must be used inside the matching `WsProvider`. Subscribes on mount and unsubscribes on unmount.
 
 | `type`      | Handler                                        | Description                  |
 | ----------- | ---------------------------------------------- | ---------------------------- |
@@ -254,17 +253,18 @@ Must be used inside the matching `WsProvider`. Registers in `useEffect` and unsu
 
 **Details:**
 
-- Handler is kept in a ref — changing the callback does **not** re-subscribe
+- Updating the callback does **not** re-subscribe
 - Changing `type` **does** re-subscribe
-- On unintentional close, the store is updated to `status: "closed"` and the appropriate `phase` before the `close` handler runs
-- Intentional `disconnect()` or provider unmount follows the same order: store first, then `close`
+- On unintentional disconnect, the store is updated to `status: "closed"` and the appropriate `phase` before your `close` handler runs
+- Intentional `disconnect()` or provider unmount follows the same order: store first, then `close` fires (when a socket exists)
+- When `connect()` replaces an existing socket, `close` fires first (reason: `"reconnect"`), then the store moves to `connecting`
 - For multiple events, call `useWsEvents` multiple times
 
 ---
 
 ### Liveness
 
-Enable via `createWsContext({ liveness: { … } })`. After OPEN, sends periodic application-layer pings (JSON via `send`, not WebSocket control frames); if no matching pong within `timeoutMs`, closes the socket (which can trigger reconnect).
+Enable via `createWsContext({ liveness: { … } })`. Once connected, sends periodic application-layer pings (JSON written directly to the socket — not WebSocket control frames, and not through the outbound queue); if no matching pong arrives within `timeoutMs`, closes the socket (which may trigger reconnect if enabled).
 
 Shape of the `liveness` option:
 
@@ -295,7 +295,7 @@ createWsContext({
 });
 ```
 
-Every incoming message is checked with `isPong`; a pong clears the timeout timer and still emits `"message"`. Ping payloads are always sent via `JSON.stringify` (JSON only).
+Every incoming message is checked with `isPong`; a pong clears the timeout timer and still fires `"message"`. Ping payloads are always sent via `JSON.stringify` (JSON only).
 
 ---
 
@@ -305,9 +305,9 @@ When `outgoingQueueMax > 0`:
 
 | When                       | Behavior                                                       |
 | -------------------------- | -------------------------------------------------------------- |
-| `send` while not OPEN      | Enqueue (FIFO)                                                 |
+| `send` while not connected | Enqueue (first in, first out)                                                 |
 | Queue full                 | Returns `false`; does **not** drop older messages              |
-| Socket OPEN                | Flush entire queue in order                                    |
+| Socket connected           | Sends the entire queue in order                                    |
 | `disconnect()`             | Clear queue; store set to `idle` / `closed` (see `WsProvider`) |
 | `WsProvider` unmount       | Clear queue; store synced (see `WsProvider`)                   |
 | Waiting for auto-reconnect | **Keep** queue                                                 |
@@ -326,13 +326,13 @@ From the main `react-ws-context` entry:
 | `WsEvents`               | Event name → handler map                                 |
 | `WsStatus`               | WebSocket connection state (`WsState`)                   |
 | `WsPhase`                | Provider connection intent / reconnect phase (`WsState`) |
-| `WsState`                | Subscribable store shape (health / queue / reconnect)    |
+| `WsState`                | Subscribable store shape (health / reconnect)    |
 
 ---
 
 ## Submodule: `react-ws-context/stall`
 
-Optional stall-control message helpers for demos or mock-server integration. **Not** wired into `createWsContext` — parse in your own handlers.
+Optional stall-control message helpers for mock servers or test setups. **Not** wired into `createWsContext` — parse them in your own `useWsEvents("message")` handlers.
 
 ```ts
 import {
@@ -351,7 +351,7 @@ import {
 | `STALL_MESSAGE_TYPE`         | Client control message type (`"STALL"`)                                                               |
 | `STALL_ACK_TYPE`             | Server ack type (`"STALL_ACK"`) — for typing only; no built-in parser                                 |
 | `createStallMessage(action)` | Build a client `STALL` message for `sendJson`                                                         |
-| `parseStallMessage(data)`    | Parse client `STALL` messages from `useWsEvents("message")` data; `null` if invalid (not `STALL_ACK`) |
+| `parseStallMessage(data)`    | Parse `STALL`-shaped messages from `useWsEvents("message")` data; `null` if invalid (not `STALL_ACK`) |
 | `StallAction`                | `"stall" \| "release"`                                                                                |
 | `StallMessage`               | `{ type: "STALL"; action: StallAction }`                                                              |
 | `StallAck`                   | `{ type: "STALL_ACK"; action: StallAction; active: boolean }` — parse server acks yourself            |
@@ -379,9 +379,9 @@ sendJson(createStallMessage("stall"));
 | Reconnect        | Fixed interval only; no exponential backoff; optional cap via `reconnectMax`                              |
 | SSR              | No `WebSocket` on the server; `connect()` is a no-op without `window`                                     |
 | Error status     | No `"error"` in `WsStatus`; use `useWsEvents("error")`                                                    |
-| `WsState` scope  | Health / queue / reconnect only — not messages or app data                                                |
+| `WsState` scope  | Health / reconnect only — not messages or app data                                                |
 | Rendering        | Components that only call `useWsActions` do not re-render on store or messages                            |
-| Store updates    | Repeated writes of the same field values do not notify; prefer selectors                                  |
+| Store updates    | Unchanged field values skip re-renders; prefer selectors for the fields you need |
 
 ---
 
@@ -400,13 +400,13 @@ This package does **not** list zustand or nanoevents as npm dependencies. It inl
 - **Maintainer:** [pmndrs](https://github.com/pmndrs) (Poimandres)
 - **License:** [MIT](https://github.com/pmndrs/zustand/blob/main/LICENSE)
 - **Adapted from:**
-  - External store API — aligned with [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts) (subset only; no middleware, replace, or initializer factory); `setState` adds partial shallow dedup (unchanged values skip notification)
-  - React subscription — inspired by [`react.ts`](https://github.com/pmndrs/zustand/blob/main/src/react.ts) `useStore` (no `useDebugValue`); optional selector overload lives in `createUseWsStore`
+  - External store API — aligned with [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts) (subset only; no middleware, replace, or initializer factory); `setState` skips notification when field values are unchanged
+  - React subscription — inspired by [`react.ts`](https://github.com/pmndrs/zustand/blob/main/src/react.ts) `useStore` (no `useDebugValue`); this package adds an optional selector overload for `useWsStore`
 - **Files:** `src/ws-context/store.ts`, `src/ws-context/use-store.ts`
 
 ### [nanoevents](https://github.com/ai/nanoevents)
 
 - **Author:** [Andrey Sitnik](https://github.com/ai) (`ai`)
 - **License:** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
-- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); React subscription wrapper added in `ws-events.ts`
+- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); React hook wrapper added in this package
 - **Files:** `src/ws-context/emitter.ts`, `src/ws-context/ws-events.ts`

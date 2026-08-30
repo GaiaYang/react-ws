@@ -13,7 +13,7 @@ React WebSocket **連線層** monorepo。可發佈套件：**`react-ws-context`*
 
 ```
 .
-├── packages/react-ws   # 套件核心：react-ws-context（零 runtime 依賴）
+├── packages/react-ws   # 套件核心：react-ws-context（零執行期依賴）
 ├── apps/web            # Next.js Demo
 └── apps/mock-ws        # 本地 mock WS（ws://localhost:8080）
 ```
@@ -30,7 +30,7 @@ pnpm build:pkg        # 編譯 packages/react-ws → dist/
 pnpm typecheck        # 全 workspace 型別檢查
 ```
 
-Demo 連線 `ws://localhost:8080`，需同時跑 `dev:mock` 與 `dev`（兩個終端）。`react-ws-context` 透過 `workspace:*` 讀取編譯後的 `dist/`；`pnpm dev` 會平行跑 `tsdown --watch` 與 Next.js，改套件原始碼時存檔即會重編譯。若只啟動 web、不跑 watch，需先 `pnpm build:pkg`。
+Demo 連線 `ws://localhost:8080`，需同時跑 `dev:mock` 與 `dev`（兩個終端）。`react-ws-context` 透過 `workspace:*` 讀取編譯後的 `dist/`；`pnpm dev` 會平行跑 `tsdown --watch` 與 Next.js，改套件原始碼時存檔即會重編譯。若只跑 `pnpm --filter @react-ws/web dev`（不含套件 watch），需先 `pnpm build:pkg`。
 
 ### 為子專案加依賴
 

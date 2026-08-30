@@ -30,7 +30,7 @@ pnpm build:pkg        # Build packages/react-ws → dist/
 pnpm typecheck        # Typecheck entire workspace
 ```
 
-The demo connects to `ws://localhost:8080` — run `dev:mock` and `dev` in separate terminals. `react-ws-context` is consumed via `workspace:*` from compiled `dist/`; `pnpm dev` runs `tsdown --watch` and Next.js in parallel, so package source changes rebuild on save. If you start only the web app without watch, run `pnpm build:pkg` first.
+The demo connects to `ws://localhost:8080` — run `dev:mock` and `dev` in separate terminals. `react-ws-context` is consumed via `workspace:*` from compiled `dist/`; `pnpm dev` runs `tsdown --watch` and Next.js in parallel, so package source changes rebuild on save. If you run only `pnpm --filter @react-ws/web dev` (without the package watch), run `pnpm build:pkg` first.
 
 ### Add a dependency to a workspace package
 
