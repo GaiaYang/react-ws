@@ -167,12 +167,11 @@ export function createWsContext(options: CreateWsContextOptions) {
       };
     }, [store, emitter, outgoingQueue, livenessSession, reconnect]);
 
-    reconnect.bindOnReconnect(connect);
-
     useEffect(() => {
+      reconnect.bindOnReconnect(connect);
       if (autoConnect) connect();
       return () => teardown("provider unmount");
-    }, [connect, teardown]);
+    }, [connect, teardown, reconnect]);
 
     const send = useCallback<WsContextValue["send"]>(
       (data) => {

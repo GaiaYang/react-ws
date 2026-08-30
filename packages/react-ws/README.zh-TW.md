@@ -114,7 +114,7 @@ createWsContext(options)
 | `autoConnect`      | `boolean`                                 | `true`   | WsProvider 載入時是否自動連線                                    |
 | `reconnectMs`      | `number`                                  | `0`      | 非主動斷線後的重連間隔（毫秒）；`0` 表示不重連                   |
 | `reconnectMax`     | `number`                                  | `0`      | 非主動斷線後最多自動重連幾次；`0` 不限制（需 `reconnectMs > 0`） |
-| `outgoingQueueMax` | `number`                                  | `0`      | socket 未連線時的待送佇列上限；`0` 關閉佇列                       |
+| `outgoingQueueMax` | `number`                                  | `0`      | socket 未連線時的待送佇列上限；`0` 關閉佇列                      |
 | `parse`            | `(data: MessageEvent["data"]) => unknown` | 見下方   | 將原始 `MessageEvent.data` 轉成業務資料                          |
 | `liveness`         | `LivenessOptions`                         | —        | 探活設定；省略則不啟用                                           |
 
@@ -125,12 +125,12 @@ createWsContext(options)
 
 #### 回傳值
 
-| 名稱           | 型別                                 | 說明                                 |
-| -------------- | ------------------------------------ | ------------------------------------ |
-| `WsProvider`   | `React.FC<{ children }>`             | 包住需要此連線的子樹                 |
-| `useWsActions` | `() => WsContextValue`               | 連線操作 API                         |
+| 名稱           | 型別                                 | 說明                         |
+| -------------- | ------------------------------------ | ---------------------------- |
+| `WsProvider`   | `React.FC<{ children }>`             | 包住需要此連線的子樹         |
+| `useWsActions` | `() => WsContextValue`               | 連線操作 API                 |
 | `useWsStore`   | `() => WsState` 或 `(selector) => T` | 訂閱連線層狀態（健康／重連） |
-| `useWsEvents`  | `(type, handler) => void`            | 訂閱 WebSocket 事件                  |
+| `useWsEvents`  | `(type, handler) => void`            | 訂閱 WebSocket 事件          |
 
 ---
 
@@ -138,13 +138,13 @@ createWsContext(options)
 
 負責建立、維護與銷毀原生 `WebSocket` 實例。
 
-| 行為                        | 說明                                                                                                                                                                                                     |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WsProvider` 載入且 `autoConnect: true` | 自動連線                                                                                                                                                                                                 |
-| 卸載                     | 取消重連（`reconnectAttempt` 與 `reconnectExhausted` 歸零）、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`） |
-| `disconnect()`              | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                                   |
-| 重連                        | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無指數退避）；`reconnectMax > 0` 時超過次數即停止                                                                                         |
-| `connect()` 時已有舊 socket | 先關閉舊 socket 並觸發 `close` 事件（reason: `"reconnect"`），再建立新連線（手動 connect 或自動重連皆同）                                                                                                              |
+| 行為                                    | 說明                                                                                                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WsProvider` 載入且 `autoConnect: true` | 自動連線                                                                                                                                                                                                   |
+| 卸載                                    | 取消重連（`reconnectAttempt` 與 `reconnectExhausted` 歸零）、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`） |
+| `disconnect()`                          | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                             |
+| 重連                                    | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無指數退避）；`reconnectMax > 0` 時超過次數即停止                                                                                                       |
+| `connect()` 時已有舊 socket             | 先關閉舊 socket 並觸發 `close` 事件（reason: `"reconnect"`），再建立新連線（手動 connect 或自動重連皆同）                                                                                                  |
 
 ---
 
@@ -152,13 +152,13 @@ createWsContext(options)
 
 必須在對應的 `WsProvider` 內使用。回傳的方法引用穩定，**不會**因狀態或訊息更新而重繪元件。
 
-| 方法         | 簽名                         | 說明                                                                                             |
-| ------------ | ---------------------------- | ------------------------------------------------------------------------------------------------ |
-| `send`       | `(data) => boolean`          | 傳送原始資料（`string`、`ArrayBuffer`、`Blob` 等）。已連線則立即送出；否則視佇列設定入隊       |
-| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`；回傳值同 `send`，無法序列化時為 `false`                          |
-| `connect`    | `() => void`                 | 建立連線；若已有連線會先關閉舊 socket（見 `WsProvider`）                                         |
+| 方法         | 簽名                         | 說明                                                                                     |
+| ------------ | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `send`       | `(data) => boolean`          | 傳送原始資料（`string`、`ArrayBuffer`、`Blob` 等）。已連線則立即送出；否則視佇列設定入隊 |
+| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`；回傳值同 `send`，無法序列化時為 `false`                  |
+| `connect`    | `() => void`                 | 建立連線；若已有連線會先關閉舊 socket（見 `WsProvider`）                                 |
 | `disconnect` | `() => void`                 | 主動斷線；狀態設為 `phase: "idle"`、`status: "closed"`，**不**觸發自動重連；清空待送佇列 |
-| `getStatus`  | `() => WsStatus`             | 讀取當下連線狀態；不訂閱、不觸發重繪                                                              |
+| `getStatus`  | `() => WsStatus`             | 讀取當下連線狀態；不訂閱、不觸發重繪                                                     |
 
 **`send` / `sendJson` 回傳值：**
 
@@ -196,8 +196,8 @@ interface WsState {
 }
 ```
 
-| 適合放進可訂閱狀態                                        | 不適合                                |
-| ----------------------------------------------------------- | ------------------------------------- |
+| 適合放進可訂閱狀態                                          | 不適合                            |
+| ----------------------------------------------------------- | --------------------------------- |
 | `status`、`phase`、`reconnectAttempt`、`reconnectExhausted` | `lastMessage`、訊息歷史、業務資料 |
 
 `url`、`reconnectMax` 等選項在 `createWsContext` 時即固定，**不會**出現在 `WsState`。若 UI 要顯示「第 n 次／最多 m 次」，請在建立 context 時自行記下這些設定值。
@@ -215,12 +215,12 @@ interface WsState {
 
 #### `WsPhase`
 
-| 值             | 意義                                                                  |
-| -------------- | --------------------------------------------------------------------- |
-| `idle`         | 未連線、未排程重連（初始或手動 `disconnect()`）                       |
-| `connecting`   | 首次或手動 `connect()` 連線中                                         |
-| `open`         | 已連線                                                                |
-| `reconnecting` | 自動重連週期（等待計時器或連線中）；搭配 `status`、`reconnectAttempt` |
+| 值             | 意義                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `idle`         | 未連線、未排程重連（初始或手動 `disconnect()`）                                                                           |
+| `connecting`   | 首次或手動 `connect()` 連線中                                                                                             |
+| `open`         | 已連線                                                                                                                    |
+| `reconnecting` | 自動重連週期（等待計時器或連線中）；搭配 `status`、`reconnectAttempt`                                                     |
 | `stopped`      | 不會再自動重連；`reconnectExhausted === true` 表示已達 `reconnectMax`，`false` 則多半是 `reconnectMs === 0`（未啟用重連） |
 
 `status` 與 `phase` 常同時變化，但語意不同。例如 `phase === "reconnecting"` 且 `status === "closed"` 表示正在等待重連計時器；`status === "connecting"` 則表示計時器已觸發、正在嘗試連線。
@@ -244,7 +244,7 @@ const canDisconnect =
 
 必須在對應的 `WsProvider` 內使用。元件掛載時註冊，卸載時自動取消訂閱。
 
-| `type`      | 回呼簽名                                   | 說明                             |
+| `type`      | 回呼簽名                                       | 說明                             |
 | ----------- | ---------------------------------------------- | -------------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 為經 `parse` 處理後的結果 |
 | `"open"`    | `(event: Event) => void`                       | 連線建立                         |
@@ -303,14 +303,14 @@ createWsContext({
 
 當 `outgoingQueueMax > 0` 時：
 
-| 時機                     | 行為                                                      |
-| ------------------------ | --------------------------------------------------------- |
-| `send` 且 socket 未連線 | 訊息入隊（先進先出）                                      |
-| 佇列已滿                 | 回傳 `false`，**不**丟棄舊訊息                            |
-| socket 已連線              | 依序送出全部佇列                                       |
-| `disconnect()`           | 清空佇列；狀態設為 `idle` / `closed`（見 `WsProvider`） |
-| `WsProvider` 卸載     | 清空佇列；狀態同步（見 `WsProvider`）                   |
-| 自動重連等待期間         | **保留**佇列                                              |
+| 時機                    | 行為                                                    |
+| ----------------------- | ------------------------------------------------------- |
+| `send` 且 socket 未連線 | 訊息入隊（先進先出）                                    |
+| 佇列已滿                | 回傳 `false`，**不**丟棄舊訊息                          |
+| socket 已連線           | 依序送出全部佇列                                        |
+| `disconnect()`          | 清空佇列；狀態設為 `idle` / `closed`（見 `WsProvider`） |
+| `WsProvider` 卸載       | 清空佇列；狀態同步（見 `WsProvider`）                   |
+| 自動重連等待期間        | **保留**佇列                                            |
 
 ---
 
@@ -323,10 +323,10 @@ createWsContext({
 | `CreateWsContextOptions` | `createWsContext` 的選項                            |
 | `LivenessOptions`        | `createWsContext` 的 `liveness` 選項                |
 | `WsContextValue`         | `useWsActions()` 回傳型別                           |
-| `WsEvents`               | 事件名稱與回呼的型別對應                       |
+| `WsEvents`               | 事件名稱與回呼的型別對應                            |
 | `WsStatus`               | WebSocket 連線狀態（`WsState` 的一環）              |
 | `WsPhase`                | Provider 連線意圖與重連策略階段（`WsState` 的一環） |
-| `WsState`                | 可訂閱狀態的形狀（連線健康／重連）          |
+| `WsState`                | 可訂閱狀態的形狀（連線健康／重連）                  |
 
 ---
 
@@ -346,15 +346,15 @@ import {
 } from "react-ws-context/stall";
 ```
 
-| 匯出                         | 說明                                                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `STALL_MESSAGE_TYPE`         | 客戶端控制訊息 type 常數（`"STALL"`）                                                                  |
-| `STALL_ACK_TYPE`             | 伺服器確認 type 常數（`"STALL_ACK"`）— 僅供型別使用，無內建解析器                                     |
-| `createStallMessage(action)` | 建立可 `sendJson` 的客戶端 `STALL` 訊息                                                                |
+| 匯出                         | 說明                                                                                                 |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `STALL_MESSAGE_TYPE`         | 客戶端控制訊息 type 常數（`"STALL"`）                                                                |
+| `STALL_ACK_TYPE`             | 伺服器確認 type 常數（`"STALL_ACK"`）— 僅供型別使用，無內建解析器                                    |
+| `createStallMessage(action)` | 建立可 `sendJson` 的客戶端 `STALL` 訊息                                                              |
 | `parseStallMessage(data)`    | 從 `useWsEvents("message")` 的 `data` 解析 `STALL` 格式訊息；格式不符回傳 `null`（不含 `STALL_ACK`） |
-| `StallAction`                | `"stall" \| "release"`                                                                                 |
-| `StallMessage`               | `{ type: "STALL"; action: StallAction }`                                                               |
-| `StallAck`                   | `{ type: "STALL_ACK"; action: StallAction; active: boolean }` — 伺服器確認訊息請自行解析                  |
+| `StallAction`                | `"stall" \| "release"`                                                                               |
+| `StallMessage`               | `{ type: "STALL"; action: StallAction }`                                                             |
+| `StallAck`                   | `{ type: "STALL_ACK"; action: StallAction; active: boolean }` — 伺服器確認訊息請自行解析             |
 
 **範例：**
 
@@ -373,15 +373,15 @@ sendJson(createStallMessage("stall"));
 
 ## 設計取捨與限制
 
-| 項目           | 說明                                                                     |
-| -------------- | ------------------------------------------------------------------------ |
-| 設定不可變     | `url`、`reconnectMs` 等建立後固定；要換 URL 請另建一組 `createWsContext` |
-| 重連策略       | 固定間隔，無指數退避；`reconnectMax > 0` 可限制次數          |
-| SSR            | 不在 server 建立 `WebSocket`；`connect()` 在 `window` 不存在時不執行任何動作（no-op）   |
-| 錯誤狀態       | 不設 `"error"` 狀態值；請監聽 `useWsEvents("error")`                     |
-| `WsState` 範圍 | 只含連線健康／重連；訊息與業務資料不走可訂閱狀態                       |
-| 訊息與渲染     | 只呼叫 `useWsActions` 的元件不會因狀態或訊息重繪                 |
-| 狀態更新     | 欄位值未變不觸發重繪；建議以選取器只訂閱需要的欄位                   |
+| 項目           | 說明                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------- |
+| 設定不可變     | `url`、`reconnectMs` 等建立後固定；要換 URL 請另建一組 `createWsContext`              |
+| 重連策略       | 固定間隔，無指數退避；`reconnectMax > 0` 可限制次數                                   |
+| SSR            | 不在 server 建立 `WebSocket`；`connect()` 在 `window` 不存在時不執行任何動作（no-op） |
+| 錯誤狀態       | 不設 `"error"` 狀態值；請監聽 `useWsEvents("error")`                                  |
+| `WsState` 範圍 | 只含連線健康／重連；訊息與業務資料不走可訂閱狀態                                      |
+| 訊息與渲染     | 只呼叫 `useWsActions` 的元件不會因狀態或訊息重繪                                      |
+| 狀態更新       | 欄位值未變不觸發重繪；建議以選取器只訂閱需要的欄位                                    |
 
 ---
 

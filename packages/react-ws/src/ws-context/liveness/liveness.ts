@@ -30,14 +30,15 @@ export function createLiveness(
   return {
     start() {
       controller?.stop();
+      const sessionSocket = getActiveSocket();
       controller = createLivenessController(options, () => {
-        const current = getActiveSocket();
-        if (current?.readyState === WebSocket.OPEN) current.close();
+        if (sessionSocket?.readyState === WebSocket.OPEN) sessionSocket.close();
       });
       const sendPing = createPingSender(options.ping, (data) => {
-        const current = getActiveSocket();
-        if (!current || current.readyState !== WebSocket.OPEN) return false;
-        current.send(JSON.stringify(data));
+        if (!sessionSocket || sessionSocket.readyState !== WebSocket.OPEN) {
+          return false;
+        }
+        sessionSocket.send(JSON.stringify(data));
         return true;
       });
       controller.start(sendPing);

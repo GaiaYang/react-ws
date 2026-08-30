@@ -65,6 +65,39 @@ describe("liveness", () => {
     controller.stop();
   });
 
+  it("timeout does not close a newer socket", () => {
+    const closeA = vi.fn();
+    const closeB = vi.fn();
+    const a = {
+      readyState: 1,
+      close: closeA,
+      send: vi.fn(),
+    } as unknown as WebSocket;
+    const b = {
+      readyState: 1,
+      close: closeB,
+      send: vi.fn(),
+    } as unknown as WebSocket;
+    let active: WebSocket | null = a;
+
+    const session = createLiveness(
+      {
+        intervalMs: 100,
+        timeoutMs: 50,
+        ping: { type: "PING" },
+        isPong: () => false,
+      },
+      () => active,
+    );
+
+    session.start();
+    active = b;
+    vi.advanceTimersByTime(50);
+    expect(closeA).toHaveBeenCalledTimes(1);
+    expect(closeB).not.toHaveBeenCalled();
+    session.stop();
+  });
+
   it("createLiveness closes active socket on timeout", () => {
     vi.useFakeTimers();
     const close = vi.fn();

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-30
+
+### Fixed
+
+- Liveness ping and timeout bind to the socket from `start()`, so a stale timer cannot close a newer reconnect socket
+
+### Changed
+
+- `bindOnReconnect` runs in the mount `useEffect` (no render-phase write)
+- `WsState` JSDoc: fields are primitives only; drop stale outbound-queue mention
+
+### Added
+
+- Liveness smoke test: timeout does not close a newer socket
+
 ## [0.4.1] - 2026-08-30
 
 ### Added

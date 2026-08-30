@@ -31,11 +31,12 @@ export type WsPhase =
 /**
  * 可訂閱的連線層 state（低頻更新）。
  *
- * 只放：**連線健康**、**outbound 佇列**、**重連** 等連線生命週期資訊。
+ * 只放：**連線健康**、**重連** 等連線生命週期資訊。
  *
  * 不放：訊息 payload、訊息歷史、業務資料（請用 `useWsEvents` 或自行管理 state）。
  *
- * 未來可能擴充例如 `pendingCount`；新增欄位時請維持低頻、可 selector 訂閱。
+ * 欄位限原始值（字串／數字／布林），不放物件或陣列。
+ * 未來可能擴充例如 `pendingCount`；新增時維持低頻、原始值、可 selector 訂閱。
  */
 export type WsState = {
   /** 連線生命週期狀態 */
