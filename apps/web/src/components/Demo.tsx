@@ -11,10 +11,7 @@ import {
 import { createStallMessage } from "@/components/stall-message";
 import type { WsPhase, WsStatus } from "react-ws-context";
 
-const PHASE_BADGE: Record<
-  WsPhase,
-  { label: string; className: string }
-> = {
+const PHASE_BADGE: Record<WsPhase, { label: string; className: string }> = {
   idle: { label: "閒置", className: "badge-ghost" },
   connecting: { label: "連線中", className: "badge-info" },
   open: { label: "已連線", className: "badge-success" },
@@ -86,11 +83,11 @@ function DemoPanel() {
     <div className="flex max-w-md flex-col gap-3">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-base-content/70">Provider</span>
+          <span className="text-base-content/70 text-sm">Provider</span>
           <span className={`badge badge-sm ${badge.className}`}>
             {badge.label}
           </span>
-          <span className="font-mono text-xs text-base-content/50">
+          <span className="text-base-content/50 font-mono text-xs">
             {phase}
           </span>
         </div>
@@ -112,11 +109,7 @@ function DemoPanel() {
           type="button"
           className="btn btn-sm"
           disabled={!canConnect}
-          title={
-            canConnect
-              ? "手動建立連線"
-              : "連線中或已連線時無法再次連線"
-          }
+          title={canConnect ? "手動建立連線" : "連線中或已連線時無法再次連線"}
           onClick={connect}
         >
           連線
@@ -126,9 +119,7 @@ function DemoPanel() {
           className="btn btn-sm"
           disabled={!canDisconnect}
           title={
-            canDisconnect
-              ? "主動斷線並取消自動重連"
-              : "尚未連線，無法斷線"
+            canDisconnect ? "主動斷線並取消自動重連" : "尚未連線，無法斷線"
           }
           onClick={disconnect}
         >
