@@ -1,6 +1,6 @@
 {
   "name": "react-ws-context",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "React WebSocket connection layer — separate hooks for actions, connection state, and message events to avoid unnecessary re-renders",
   "keywords": [
     "react",
@@ -31,11 +31,6 @@
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
-    },
-    "./stall": {
-      "types": "./dist/stall/index.d.mts",
-      "import": "./dist/stall/index.mjs",
-      "default": "./dist/stall/index.mjs"
     }
   },
   "files": [

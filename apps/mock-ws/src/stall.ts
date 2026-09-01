@@ -1,4 +1,4 @@
-/** 協議字串須與 react-ws-context/stall/constants.ts 一致（mock 不依賴 react-ws-context） */
+/** 協議字串須與 apps/web 的 stall 訊息一致（mock 不依賴 react-ws-context） */
 const STALL_MESSAGE_TYPE = "STALL";
 const STALL_ACK_TYPE = "STALL_ACK";
 

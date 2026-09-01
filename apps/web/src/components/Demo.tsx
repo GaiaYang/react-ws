@@ -8,7 +8,7 @@ import {
   useWsEvents,
   DEMO_WS_RECONNECT_MAX,
 } from "@/components/demo-ws";
-import { createStallMessage } from "react-ws-context/stall";
+import { createStallMessage } from "@/components/stall-message";
 import type { WsPhase, WsStatus } from "react-ws-context";
 
 const PHASE_BADGE: Record<
@@ -49,7 +49,7 @@ function formatPhaseDetail(
       if (exhausted) {
         return `自動重連已達上限（${max} 次），需手動 connect 重試。`;
       }
-      return "連線中斷且未啟用自動重連，或重連已放棄。";
+      return "不會再自動重連（未啟用重連，或握手失敗）。需手動 connect。";
     default: {
       const _exhaustive: never = phase;
       return _exhaustive;

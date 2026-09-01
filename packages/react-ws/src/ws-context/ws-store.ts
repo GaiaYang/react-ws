@@ -23,7 +23,7 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
  * - `connecting` — 首次或手動 `connect()` 連線中
  * - `open` — 已連線
  * - `reconnecting` — 自動重連週期（等待計時器或連線中）；細節搭配 `status`、`reconnectAttempt`
- * - `stopped` — 不會再自動重連；`reconnectExhausted` 區分達上限或未啟用重連
+ * - `stopped` — 不會再自動重連；`reconnectExhausted === true` 表示已達 `reconnectMax`；`false` 表示未啟用重連，或握手在計時器已觸發後失敗
  */
 export type WsPhase =
   "idle" | "connecting" | "open" | "reconnecting" | "stopped";

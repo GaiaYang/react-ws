@@ -13,7 +13,7 @@ A React **WebSocket connection-layer** package. It separates connection lifecycl
 ## Features
 
 - **Zero runtime dependencies** — only `react >= 18` as a peer dependency
-- **Frozen config** — `url`, `reconnectMs`, etc. are fixed at `createWsContext`; use `connect` / `disconnect` at runtime
+- **Frozen strategy** — the `url` / `protocols` getter (or static value) and other options are fixed at `createWsContext`; each handshake resolves getters. Runtime API is still only `connect` / `disconnect`
 - **Render isolation** — connection-layer state (health / reconnect) is subscribed via `useWsStore`; messages via `useWsEvents` (not written into React state)
 - **Optional liveness** — periodic ping / pong; closes the socket on timeout (may trigger reconnect if enabled)
 - **Optional outbound queue** — buffers messages while not connected; sends the queue in order on connect
@@ -50,6 +50,22 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
     reconnectMs: 2000,
   });
 ```
+
+`url` / `protocols` may be a static value or a **sync getter** (`MaybeGetter<T>`). The function is fixed at `createWsContext` and is called synchronously at the start of each `connect()` (manual, `autoConnect`, and the reconnect timer share that path). Do not `await` and do not call hooks inside the getter. The caller owns the source (e.g. `localStorage`); this package does not handle auth — the app decides when to `connect()` / `disconnect()`.
+
+```tsx
+createWsContext({
+  url: () => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) throw new Error("no token");
+    return `wss://api.example.com/ws?token=${encodeURIComponent(token)}`;
+  },
+  autoConnect: false,
+  reconnectMs: 2000,
+});
+```
+
+If the getter throws, the resolved URL is `""`, or `new WebSocket` throws (invalid URL), `connect()` emits `"error"`, does not open a socket, and does not close an existing one. If a reconnect timer had already fired, the store goes to `status: "closed"`, `phase: "stopped"` (no further auto-retries). Fix the sync source and call `connect()` again. To replace the getter or switch back to a static string, call `createWsContext` again.
 
 **2. Use it in your app**
 
@@ -109,8 +125,8 @@ Creates a `WsProvider` and hooks bound to the same connection config.
 
 | Field              | Type                                      | Default    | Description                                                                               |
 | ------------------ | ----------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| `url`              | `string`                                  | (required) | WebSocket URL                                                                             |
-| `protocols`        | `string \| string[]`                      | —          | Passed to `new WebSocket(url, protocols)`                                                 |
+| `url`              | `MaybeGetter<string>`                     | (required) | WebSocket URL; sync getter is called at the start of each `connect()`                     |
+| `protocols`        | `MaybeGetter<string \| string[]>`         | —          | Passed to `new WebSocket(url, protocols)`; omit the option to skip the second argument. An empty string from a getter is passed through |
 | `autoConnect`      | `boolean`                                 | `true`     | Auto-connect when `WsProvider` loads                                                      |
 | `reconnectMs`      | `number`                                  | `0`        | Reconnect delay (ms) after unintentional close; `0` disables reconnect                    |
 | `reconnectMax`     | `number`                                  | `0`        | Max auto-reconnects after unintentional close; `0` unlimited (requires `reconnectMs > 0`) |
@@ -144,7 +160,8 @@ Creates, owns, and tears down the native `WebSocket`.
 | unmount                                  | Cancels reconnect (`reconnectAttempt` and `reconnectExhausted` reset), stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes the socket and fires `close` if one exists (reason: `"provider unmount"`) |
 | `disconnect()`                           | Same cleanup and store reset as unmount, no auto-reconnect; fires `close` if a socket exists (reason: `"client disconnect"`)                                                                                                                       |
 | reconnect                                | Fixed interval when `reconnectMs > 0` and close was not intentional (no exponential backoff); stops after `reconnectMax` if `> 0`                                                                                                                  |
-| `connect()` with existing socket         | Closes the previous socket and fires `close` (reason: `"reconnect"`) before opening a new one (manual connect or auto-reconnect)                                                                                                                   |
+| `connect()` with existing socket         | Constructs the new socket first; on success, closes the previous one and fires `close` (reason: `"reconnect"`). If construction fails, the existing socket is left as-is                                                                                     |
+| getter throws, empty URL, or `new WebSocket` throws | Emits `"error"`; does not open a socket or close an existing one; `connect()` does not throw. If the reconnect timer had already fired: `status: "closed"`, `phase: "stopped"`, no further auto-retries |
 
 ---
 
@@ -156,7 +173,7 @@ Must be used inside the matching `WsProvider`. Returned actions keep a stable re
 | ------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `send`       | `(data) => boolean`          | Send raw data (`string`, `ArrayBuffer`, `Blob`, etc.). Sends immediately when connected; otherwise enqueues if configured |
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`; same return semantics as `send`; `false` if not serializable                                |
-| `connect`    | `() => void`                 | Open connection; closes any existing socket first (see `WsProvider`)                                                      |
+| `connect`    | `() => void`                 | Resolve `url` / `protocols` and construct the socket; on success, close any existing socket. Handshake failure: see `WsProvider` |
 | `disconnect` | `() => void`                 | Intentional close; sets store to `phase: "idle"`, `status: "closed"`; no auto-reconnect; clears outbound queue            |
 | `getStatus`  | `() => WsStatus`             | Read current status; no subscription, no re-render                                                                        |
 
@@ -200,7 +217,7 @@ interface WsState {
 | ----------------------------------------------------------- | -------------------------------------------- |
 | `status`, `phase`, `reconnectAttempt`, `reconnectExhausted` | `lastMessage`, message history, app payloads |
 
-Options like `url` and `reconnectMax` are fixed at `createWsContext` and are **not** in `WsState`. To show UI like "attempt n of m", keep those config values alongside your component state.
+Options like `reconnectMax` are fixed at `createWsContext` and are **not** in `WsState`. Resolved URL strings are not stored either. To show UI like "attempt n of m", keep those config values alongside your component state.
 
 #### `WsStatus`
 
@@ -221,7 +238,7 @@ Maps to the current WebSocket connection state (similar to readyState). Does **n
 | `connecting`   | First connect or manual `connect()` in progress                                                                                                     |
 | `open`         | Connected                                                                                                                                           |
 | `reconnecting` | Auto-reconnect cycle (waiting for timer or connecting); pair with `status`, `reconnectAttempt`                                                      |
-| `stopped`      | Will not auto-reconnect; `reconnectExhausted === true` means `reconnectMax` was hit, `false` usually means `reconnectMs === 0` (reconnect disabled) |
+| `stopped`      | Will not auto-reconnect. `reconnectExhausted === true`: `reconnectMax` was hit. `false`: reconnect disabled (`reconnectMs === 0`), or the handshake failed after the reconnect timer fired |
 
 `status` and `phase` often change together but mean different things. For example, `phase === "reconnecting"` with `status === "closed"` means waiting for the reconnect timer; `status === "connecting"` means the timer fired and a connect attempt is in progress.
 
@@ -248,7 +265,7 @@ Must be used inside the matching `WsProvider`. Subscribes on mount and unsubscri
 | ----------- | ---------------------------------------------- | ---------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the parsed payload |
 | `"open"`    | `(event: Event) => void`                       | Connection open              |
-| `"error"`   | `(event: Event) => void`                       | Connection error             |
+| `"error"`   | `(event: Event) => void`                       | Socket or handshake error    |
 | `"close"`   | `(event: CloseEvent) => void`                  | Connection closed            |
 
 **Details:**
@@ -257,7 +274,8 @@ Must be used inside the matching `WsProvider`. Subscribes on mount and unsubscri
 - Changing `type` **does** re-subscribe
 - On unintentional disconnect, the store is updated to `status: "closed"` and the appropriate `phase` before your `close` handler runs
 - Intentional `disconnect()` or provider unmount follows the same order: store first, then `close` fires (when a socket exists)
-- When `connect()` replaces an existing socket, `close` fires first (reason: `"reconnect"`), then the store moves to `connecting`
+- Handshake getter throw, empty URL, or `new WebSocket` throw emits `"error"` (synthetic `Event`) without `close` and without replacing an existing socket
+- When `connect()` replaces an existing socket (after a successful construct), `close` fires on the previous socket (reason: `"reconnect"`), then the store moves to `connecting`
 - For multiple events, call `useWsEvents` multiple times
 
 ---
@@ -321,6 +339,7 @@ From the main `react-ws-context` entry:
 | Type                     | Description                                              |
 | ------------------------ | -------------------------------------------------------- |
 | `CreateWsContextOptions` | Options for `createWsContext`                            |
+| `MaybeGetter<T>`         | `T \| (() => T)` — static value or sync getter           |
 | `LivenessOptions`        | Options for `liveness` in `createWsContext`              |
 | `WsContextValue`         | Return type of `useWsActions()`                          |
 | `WsEvents`               | Event name → handler map                                 |
@@ -330,52 +349,11 @@ From the main `react-ws-context` entry:
 
 ---
 
-## Submodule: `react-ws-context/stall`
-
-Optional stall-control message helpers for mock servers or test setups. **Not** wired into `createWsContext` — parse them in your own `useWsEvents("message")` handlers.
-
-```ts
-import {
-  STALL_MESSAGE_TYPE,
-  STALL_ACK_TYPE,
-  createStallMessage,
-  parseStallMessage,
-  type StallAction,
-  type StallMessage,
-  type StallAck,
-} from "react-ws-context/stall";
-```
-
-| Export                       | Description                                                                                           |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `STALL_MESSAGE_TYPE`         | Client control message type (`"STALL"`)                                                               |
-| `STALL_ACK_TYPE`             | Server ack type (`"STALL_ACK"`) — for typing only; no built-in parser                                 |
-| `createStallMessage(action)` | Build a client `STALL` message for `sendJson`                                                         |
-| `parseStallMessage(data)`    | Parse `STALL`-shaped messages from `useWsEvents("message")` data; `null` if invalid (not `STALL_ACK`) |
-| `StallAction`                | `"stall" \| "release"`                                                                                |
-| `StallMessage`               | `{ type: "STALL"; action: StallAction }`                                                              |
-| `StallAck`                   | `{ type: "STALL_ACK"; action: StallAction; active: boolean }` — parse server acks yourself            |
-
-**Example:**
-
-```tsx
-const { sendJson } = useWsActions();
-
-useWsEvents("message", (data) => {
-  const stall = parseStallMessage(data);
-  if (stall) console.log("stall control", stall.action);
-});
-
-sendJson(createStallMessage("stall"));
-```
-
----
-
 ## Design trade-offs
 
 | Topic            | Notes                                                                                                     |
 | ---------------- | --------------------------------------------------------------------------------------------------------- |
-| Immutable config | `url`, `reconnectMs`, etc. are fixed at create time; to use a different URL, call `createWsContext` again |
+| Frozen strategy  | Getter functions / static values are fixed at create time; getters re-resolve on each handshake. To change how URL / protocols are built, call `createWsContext` again |
 | Reconnect        | Fixed interval only; no exponential backoff; optional cap via `reconnectMax`                              |
 | SSR              | No `WebSocket` on the server; `connect()` is a no-op without `window`                                     |
 | Error status     | No `"error"` in `WsStatus`; use `useWsEvents("error")`                                                    |

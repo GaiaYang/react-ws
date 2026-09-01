@@ -95,6 +95,26 @@ describe("reconnect", () => {
     expect(refs.exhausted).toBe(false);
   });
 
+  it("clearTimerTrigger only after the timer has fired", () => {
+    const { refs, callbacks } = createCallbacks();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(100, 0, callbacks);
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    expect(reconnect.clearTimerTrigger()).toBe(false);
+
+    vi.advanceTimersByTime(100);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+    expect(reconnect.clearTimerTrigger()).toBe(true);
+    expect(refs.attempt).toBe(1);
+
+    reconnect.onConnectBegin();
+    expect(refs.attempt).toBe(0);
+  });
+
   it("reconnectMs 0 disables scheduling", () => {
     const { callbacks } = createCallbacks();
 

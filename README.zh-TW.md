@@ -64,6 +64,8 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
   });
 ```
 
+`url`／`protocols` 也可為同步 getter，每次 `connect()` 開頭取值。
+
 ## 授權
 
 本 monorepo 以 [MIT License](./LICENSE) 釋出。Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang)。套件核心內嵌程式碼之借鑑出處（zustand、nanoevents）詳見 [`packages/react-ws/README.zh-TW.md#借鑑與致謝`](./packages/react-ws/README.zh-TW.md#借鑑與致謝)。

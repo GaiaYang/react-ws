@@ -16,6 +16,14 @@ export interface Reconnect {
   onOpen: () => void;
   /** 意外斷線後嘗試重連；有排重連回 `true` */
   scheduleAfterClose: () => boolean;
+  /**
+   * 重連計時器已觸發、但本次 connect 未能開線時呼叫。
+   *
+   * 只清 `fromTimer`，不當作主動斷線、不歸零 `reconnectAttempt`。
+   *
+   * @returns 是否確為計時器已觸發（尚有待跑的 timer 則為 `false`）
+   */
+  clearTimerTrigger: () => boolean;
   /** 主動斷線或元件卸載時呼叫 */
   cancel: () => void;
   /** 設定重連時要執行的 connect */
@@ -67,11 +75,17 @@ export function createReconnect(
       }
       callbacks.setAttempt(attempt + 1);
       fromTimer = true;
-      // 固定間隔重連，無 backoff；之後可換成指數退避
+      // 固定間隔重連，無 backoff
       timer = setTimeout(() => {
         timer = null;
         onReconnect();
       }, reconnectMs);
+      return true;
+    },
+
+    clearTimerTrigger() {
+      if (!fromTimer || timer != null) return false;
+      fromTimer = false;
       return true;
     },
 

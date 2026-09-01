@@ -10,7 +10,11 @@ import {
   createWsEventsContext,
   useWsEventsApi,
 } from "./ws-events";
-import type { CreateWsContextOptions, WsContextValue } from "./types";
+import type {
+  CreateWsContextOptions,
+  MaybeGetter,
+  WsContextValue,
+} from "./types";
 import { useLiveness } from "./liveness/liveness";
 import { useOutgoingQueue } from "./outgoing-queue";
 import {
@@ -23,9 +27,6 @@ import { createUseWsActions, createWsActionsContext } from "./ws-actions";
 import { useReconnect } from "./reconnect";
 import { clientCloseEvent, detachAndClose } from "./socket";
 
-export type { CreateWsContextOptions, WsContextValue, WsEvents } from "./types";
-export type { LivenessOptions } from "./liveness/types";
-
 function defaultParse(data: MessageEvent["data"]): unknown {
   if (typeof data !== "string") return data;
   try {
@@ -33,6 +34,10 @@ function defaultParse(data: MessageEvent["data"]): unknown {
   } catch {
     return data;
   }
+}
+
+function resolveMaybeGetter<T>(value: MaybeGetter<T>): T {
+  return typeof value === "function" ? (value as () => T)() : value;
 }
 
 /**
@@ -110,6 +115,28 @@ export function createWsContext(options: CreateWsContextOptions) {
     const connect = useCallback<WsContextValue["connect"]>(() => {
       if (typeof window === "undefined") return;
 
+      let resolvedUrl: string;
+      let resolvedProtocols: string | string[] | undefined;
+      let ws: WebSocket;
+      // 先 new WebSocket：建構失敗則不關舊線、不改 store（與 getter 失敗同一條路）
+      try {
+        resolvedUrl = resolveMaybeGetter(url);
+        if (resolvedUrl === "") throw new Error("empty url");
+        if (protocols !== undefined) {
+          resolvedProtocols = resolveMaybeGetter(protocols);
+        }
+        ws =
+          resolvedProtocols == null
+            ? new WebSocket(resolvedUrl)
+            : new WebSocket(resolvedUrl, resolvedProtocols);
+      } catch {
+        emitter.emit("error", new Event("error"));
+        if (reconnect.clearTimerTrigger()) {
+          store.setState({ status: "closed", phase: "stopped" });
+        }
+        return;
+      }
+
       const fromReconnect = reconnect.onConnectBegin();
       livenessSession.stop();
 
@@ -125,7 +152,6 @@ export function createWsContext(options: CreateWsContextOptions) {
         phase: fromReconnect ? "reconnecting" : "connecting",
       });
 
-      const ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = (event) => {

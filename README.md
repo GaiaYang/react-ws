@@ -64,6 +64,8 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
   });
 ```
 
+`url` / `protocols` may also be sync getters, resolved at the start of each `connect()`.
+
 ## License
 
 [MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments (zustand, nanoevents): [`packages/react-ws/README.md#acknowledgments`](./packages/react-ws/README.md#acknowledgments).

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-01
+
+### Added
+
+- `url` / `protocols` accept `MaybeGetter<T>` (`T | (() => T)`); resolved synchronously at the start of `connect()` (manual, `autoConnect`, and reconnect timer share that path)
+- Handshake getter throw, empty URL, or synchronous `new WebSocket` throw emits `error` and does not open or replace a socket; if the reconnect timer had already fired, `phase` becomes `stopped` (no further auto-retries)
+
+### Breaking
+
+- Removed `react-ws-context/stall` subpath; stall protocol is now owned by the app / mock
+
 ## [0.4.2] - 2026-08-30
 
 ### Fixed
