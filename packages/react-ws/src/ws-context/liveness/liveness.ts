@@ -7,7 +7,7 @@ import {
 import type { LivenessOptions } from "./types";
 
 export interface Liveness {
-  /** 開始探活（socket 由 {@link createLiveness} 的 `getActiveSocket` 取得） */
+  /** 開始探活；socket 取自此次 `start` 當下的 `getActiveSocket` */
   start: () => void;
   /** 停止探活 */
   stop: () => void;
@@ -31,6 +31,7 @@ export function createLiveness(
     start() {
       controller?.stop();
       const sessionSocket = getActiveSocket();
+      // 逾時不可關掉之後重連的新線
       controller = createLivenessController(options, () => {
         if (sessionSocket?.readyState === WebSocket.OPEN) sessionSocket.close();
       });

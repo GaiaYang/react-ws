@@ -17,12 +17,12 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
 /**
  * Provider 連線意圖與重連策略階段（`WsState` 的一環）。
  *
- * 與 `status`（WebSocket readyState 映射）正交，補足 UI 無法單靠 `status` 判斷的情境。
+ * 與 `status` 分開：`status` 是 WebSocket 當下連線狀態；`phase` 補足「是否在重連／是否已放棄」等意圖。
  *
  * - `idle` — 未連線、未排程重連（初始或手動 `disconnect()`）
  * - `connecting` — 首次或手動 `connect()` 連線中
  * - `open` — 已連線
- * - `reconnecting` — 自動重連週期（等待計時器或連線中）；細節搭配 `status`、`reconnectAttempt`
+ * - `reconnecting` — 自動重連週期（等待計時器或連線中）
  * - `stopped` — 不會再自動重連；`reconnectExhausted === true` 表示已達 `reconnectMax`；`false` 表示未啟用重連，或握手在計時器已觸發後失敗
  */
 export type WsPhase =
@@ -36,7 +36,6 @@ export type WsPhase =
  * 不放：訊息 payload、訊息歷史、業務資料（請用 `useWsEvents` 或自行管理 state）。
  *
  * 欄位限原始值（字串／數字／布林），不放物件或陣列。
- * 未來可能擴充例如 `pendingCount`；新增時維持低頻、原始值、可 selector 訂閱。
  */
 export type WsState = {
   /** 連線生命週期狀態 */
@@ -48,7 +47,9 @@ export type WsState = {
    *
    * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
    *
-   * 成功 `open`、手動 `connect()` 或主動 `disconnect()` 歸零。
+   * 成功 `open`、主動 `disconnect()` 歸零。
+   *
+   * 手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等成功 `open` 才歸零。
    */
   reconnectAttempt: number;
   /**
@@ -62,6 +63,7 @@ export type WsState = {
 export type WsStoreApi = StoreApi<WsState>;
 
 export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
+  // closed 可能是 idle 或 stopped，init 只給 status 時無法獨推 phase
   const phase: WsPhase =
     init === "open" || init === "idle" ? init : "connecting";
   return createStore<WsState>({

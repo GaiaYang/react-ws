@@ -118,7 +118,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       let resolvedUrl: string;
       let resolvedProtocols: string | string[] | undefined;
       let ws: WebSocket;
-      // 先 new WebSocket：建構失敗則不關舊線、不改 store（與 getter 失敗同一條路）
+      // 建構失敗必須保留舊線與 store（與 getter 失敗同一條路）
       try {
         resolvedUrl = resolveMaybeGetter(url);
         if (resolvedUrl === "") throw new Error("empty url");
@@ -144,6 +144,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       if (prev) {
         wsRef.current = null;
         detachAndClose(prev);
+        // close 仍屬舊線；若先 set connecting，handler 會把這次 close 當成新握手
         emitter.emit("close", clientCloseEvent("reconnect"));
       }
 
@@ -179,13 +180,14 @@ export function createWsContext(options: CreateWsContextOptions) {
         if (wsRef.current === ws) wsRef.current = null;
         livenessSession.stop();
         const scheduled = reconnect.scheduleAfterClose();
-        // 意外斷線：先更新 store，再 emit close（handler 可讀到一致的 status / phase）
+        // 讓 close handler 讀到已更新的 status／phase
         const patch: { status: "closed"; phase?: WsPhase } = {
           status: "closed",
         };
         if (scheduled) {
           patch.phase = "reconnecting";
         } else if (store.getState().phase !== "idle") {
+          // 主動 disconnect 已是 idle，不要蓋成 stopped
           patch.phase = "stopped";
         }
         store.setState(patch);

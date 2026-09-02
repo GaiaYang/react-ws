@@ -204,12 +204,16 @@ interface WsState {
   status: WsStatus;
   /** Provider connection intent and reconnect strategy; separate from `status` in meaning */
   phase: WsPhase;
-  /** Reconnects scheduled this cycle (+1 on unintentional close, not on success) */
+  /**
+   * Reconnects scheduled this cycle (+1 on unintentional close, not on success).
+   * Displayed as `n` means the nth reconnect is scheduled or in progress.
+   * Reset on successful `open` and intentional `disconnect()`.
+   * Manual `connect()` resets immediately when not waiting on a reconnect timer;
+   * if a timer is pending, wait for successful `open`.
+   */
   reconnectAttempt: number;
   /** `true` when `reconnectMax` is hit and the final attempt failed; cleared by `connect()` / `disconnect()` */
   reconnectExhausted: boolean;
-  // Possible future fields (all low-frequency, connection-layer):
-  // pendingCount?: number;
 }
 ```
 
@@ -237,7 +241,7 @@ Maps to the current WebSocket connection state (similar to readyState). Does **n
 | `idle`         | Not connected, no reconnect scheduled (initial or manual `disconnect()`)                                                                                                                   |
 | `connecting`   | First connect or manual `connect()` in progress                                                                                                                                            |
 | `open`         | Connected                                                                                                                                                                                  |
-| `reconnecting` | Auto-reconnect cycle (waiting for timer or connecting); pair with `status`, `reconnectAttempt`                                                                                             |
+| `reconnecting` | Auto-reconnect cycle (waiting for timer or connecting)                                                                                                                                     |
 | `stopped`      | Will not auto-reconnect. `reconnectExhausted === true`: `reconnectMax` was hit. `false`: reconnect disabled (`reconnectMs === 0`), or the handshake failed after the reconnect timer fired |
 
 `status` and `phase` often change together but mean different things. For example, `phase === "reconnecting"` with `status === "closed"` means waiting for the reconnect timer; `status === "connecting"` means the timer fired and a connect attempt is in progress.
@@ -274,7 +278,7 @@ Must be used inside the matching `WsProvider`. Subscribes on mount and unsubscri
 - Changing `type` **does** re-subscribe
 - On unintentional disconnect, the store is updated to `status: "closed"` and the appropriate `phase` before your `close` handler runs
 - Intentional `disconnect()` or provider unmount follows the same order: store first, then `close` fires (when a socket exists)
-- Handshake getter throw, empty URL, or `new WebSocket` throw emits `"error"` (synthetic `Event`) without `close` and without replacing an existing socket
+- If the getter throws, the URL is empty, or `new WebSocket` throws, emits `"error"` (synthetic `Event`) without `close` and without replacing an existing socket
 - When `connect()` replaces an existing socket (after a successful construct), `close` fires on the previous socket (reason: `"reconnect"`), then the store moves to `connecting`
 - For multiple events, call `useWsEvents` multiple times
 

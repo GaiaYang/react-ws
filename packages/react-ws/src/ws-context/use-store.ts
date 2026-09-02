@@ -5,7 +5,6 @@
 // License: MIT — https://github.com/pmndrs/zustand/blob/main/LICENSE
 // Source: https://github.com/pmndrs/zustand/blob/main/src/react.ts
 // Modifications: 內嵌以達成零 runtime 依賴。
-// 用途：訂閱 WsState（連線健康／重連）；訊息不走此 store。
 
 import { useSyncExternalStore } from "react";
 import type { StoreApi } from "./store";

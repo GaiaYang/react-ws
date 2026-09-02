@@ -10,9 +10,13 @@ export interface ReconnectCallbacks {
 }
 
 export interface Reconnect {
-  /** 開始連線時呼叫；回傳 `true` 表示由重連計時器觸發 */
+  /**
+   * 開始連線時呼叫；回傳 `true` 表示由重連計時器觸發。
+   *
+   * 非計時器觸發時歸零本輪 `reconnectAttempt`；計時器等待中或剛觸發則不歸零。
+   */
   onConnectBegin: () => boolean;
-  /** 連線成功時呼叫 */
+  /** 連線成功；歸零本輪重連計數 */
   onOpen: () => void;
   /** 意外斷線後嘗試重連；有排重連回 `true` */
   scheduleAfterClose: () => boolean;
@@ -24,7 +28,7 @@ export interface Reconnect {
    * @returns 是否確為計時器已觸發（尚有待跑的 timer 則為 `false`）
    */
   clearTimerTrigger: () => boolean;
-  /** 主動斷線或元件卸載時呼叫 */
+  /** 主動斷線或元件卸載：取消計時器並歸零本輪計數 */
   cancel: () => void;
   /** 設定重連時要執行的 connect */
   bindOnReconnect: (fn: () => void) => void;
@@ -75,7 +79,6 @@ export function createReconnect(
       }
       callbacks.setAttempt(attempt + 1);
       fromTimer = true;
-      // 固定間隔重連，無 backoff
       timer = setTimeout(() => {
         timer = null;
         onReconnect();

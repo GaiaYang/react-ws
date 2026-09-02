@@ -40,7 +40,7 @@ export function createLivenessController(
   return {
     start(sendPing) {
       sendPingRef = sendPing;
-      tick();
+      tick(); // setInterval 不會立刻跑，否則要等滿一個 interval 才有第一次 ping
       intervalId = setInterval(tick, intervalMs);
     },
 

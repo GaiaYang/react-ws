@@ -33,6 +33,7 @@ export function createUseWsEvents(EventsCtx: Context<WsEventsEmitter | null>) {
 
     const handlerRef = useRef(handler);
 
+    // 否則每次 handler 變動都會拆掉訂閱，中間的事件會漏掉
     useEffect(() => {
       handlerRef.current = handler;
     });
