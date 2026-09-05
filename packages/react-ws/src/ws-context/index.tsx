@@ -54,6 +54,10 @@ export function createWsContext(options: CreateWsContextOptions) {
     autoConnect = true,
     reconnectMs = 0,
     reconnectMax = 0,
+    reconnectBackoff = 2,
+    reconnectDelayMaxMs = 30_000,
+    reconnectJitter = 0.2,
+    reconnectMinUptimeMs = 5000,
     outgoingQueueMax = 0,
     parse = defaultParse,
     liveness,
@@ -70,12 +74,22 @@ export function createWsContext(options: CreateWsContextOptions) {
     const wsRef = useRef<WebSocket | null>(null);
     const store = useWsStoreApi();
     const emitter = useWsEventsApi();
-    const reconnect = useReconnect(reconnectMs, reconnectMax, {
-      getAttempt: () => store.getState().reconnectAttempt,
-      setAttempt: (reconnectAttempt) => store.setState({ reconnectAttempt }),
-      setExhausted: (reconnectExhausted) =>
-        store.setState({ reconnectExhausted }),
-    });
+    const reconnect = useReconnect(
+      {
+        reconnectMs,
+        reconnectMax,
+        reconnectBackoff,
+        reconnectDelayMaxMs,
+        reconnectJitter,
+        reconnectMinUptimeMs,
+      },
+      {
+        getAttempt: () => store.getState().reconnectAttempt,
+        setAttempt: (reconnectAttempt) => store.setState({ reconnectAttempt }),
+        setExhausted: (reconnectExhausted) =>
+          store.setState({ reconnectExhausted }),
+      },
+    );
     const outgoingQueue = useOutgoingQueue(outgoingQueueMax);
     const livenessSession = useLiveness(liveness, () => wsRef.current);
 

@@ -15,6 +15,7 @@ React 用的 **WebSocket 連線層**套件。將連線生命週期、可訂閱�
 - **零執行期依賴** — 僅需 `react >= 18`（peer 依賴）
 - **策略凍結** — `url`／`protocols` 的 getter（或靜態值）與其餘選項在 `createWsContext` 時固定；每次握手才取值。執行期 API 仍只有 `connect`／`disconnect`
 - **渲染隔離** — 連線層狀態（健康／重連）以 `useWsStore` 訂閱；訊息以 `useWsEvents` 訂閱（不寫入 React 狀態）
+- **重連需自行開啟** — `reconnectMs > 0` 才啟用；啟用後預設帶指數退避、隨機抖動與等待上限，次數上限可選
 - **可選探活** — 週期性 ping／pong 偵測，逾時主動關閉 socket（若已啟用重連則可能觸發）
 - **可選待送佇列** — socket 未連線時暫存待送訊息，連線成功後依序送出
 
@@ -123,21 +124,47 @@ createWsContext(options)
 
 #### 參數：`CreateWsContextOptions`
 
-| 欄位               | 型別                                      | 預設     | 說明                                                                                        |
-| ------------------ | ----------------------------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| `url`              | `MaybeGetter<string>`                     | （必填） | WebSocket 連線網址；同步 getter 在每次 `connect()` 開頭呼叫                                 |
-| `protocols`        | `MaybeGetter<string \| string[]>`         | —        | 傳入 `new WebSocket(url, protocols)`；省略此選項則不傳第二參數。getter 回傳空字串會原樣傳入 |
-| `autoConnect`      | `boolean`                                 | `true`   | WsProvider 載入時是否自動連線                                                               |
-| `reconnectMs`      | `number`                                  | `0`      | 非主動斷線後的重連間隔（毫秒）；`0` 表示不重連                                              |
-| `reconnectMax`     | `number`                                  | `0`      | 非主動斷線後最多自動重連幾次；`0` 不限制（需 `reconnectMs > 0`）                            |
-| `outgoingQueueMax` | `number`                                  | `0`      | socket 未連線時的待送佇列上限；`0` 關閉佇列                                                 |
-| `parse`            | `(data: MessageEvent["data"]) => unknown` | 見下方   | 將原始 `MessageEvent.data` 轉成業務資料                                                     |
-| `liveness`         | `LivenessOptions`                         | —        | 探活設定；省略則不啟用                                                                      |
+| 欄位                   | 型別                                      | 預設     | 說明                                                                                                   |
+| ---------------------- | ----------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `url`                  | `MaybeGetter<string>`                     | （必填） | WebSocket 連線網址；同步 getter 在每次 `connect()` 開頭呼叫                                            |
+| `protocols`            | `MaybeGetter<string \| string[]>`         | —        | 傳入 `new WebSocket(url, protocols)`；省略此選項則不傳第二參數。getter 回傳空字串會原樣傳入            |
+| `autoConnect`          | `boolean`                                 | `true`   | WsProvider 載入時是否自動連線                                                                          |
+| `reconnectMs`          | `number`                                  | `0`      | 非主動斷線後的重連基礎間隔（毫秒），即第一次重連的等待；`0` 表示不重連                                 |
+| `reconnectMax`         | `number`                                  | `0`      | 非主動斷線後最多自動重連幾次；`0` 不限制（需 `reconnectMs > 0`）                                       |
+| `reconnectBackoff`     | `number`                                  | `2`      | 退避倍率：第 `n` 次等待 `reconnectMs * reconnectBackoff ** (n - 1)`；`1` 為固定間隔，小於 `1` 夾回 `1` |
+| `reconnectDelayMaxMs`  | `number`                                  | `30000`  | 單次等待的硬上限（毫秒），抖動後也不超過；`0` 不設上限                                                 |
+| `reconnectJitter`      | `number`                                  | `0.2`    | 隨機抖動比例，取值 `[0, 1]`；等待落在 `[退避 * (1 - 比例), 退避]`，`1` 即 full jitter；`0` 不抖動      |
+| `reconnectMinUptimeMs` | `number`                                  | `5000`   | 連線需維持多久（毫秒）才算穩定、歸零重連計數；`0` 表示 `open` 即歸零                                   |
+| `outgoingQueueMax`     | `number`                                  | `0`      | socket 未連線時的待送佇列上限；`0` 關閉佇列                                                            |
+| `parse`                | `(data: MessageEvent["data"]) => unknown` | 見下方   | 將原始 `MessageEvent.data` 轉成業務資料                                                                |
+| `liveness`             | `LivenessOptions`                         | —        | 探活設定；省略則不啟用                                                                                 |
 
 **預設 `parse` 行為：**
 
 - `data` 為字串 → 嘗試 `JSON.parse`，失敗則原樣回傳
 - 非字串 → 原樣回傳
+
+**重連退避預設值：** 只要 `reconnectMs > 0`，退避與抖動即生效（數量級對齊 socket.io、gRPC）。
+
+```ts
+// 1s 起、每次乘 2、上限 30s（1s、2s、4s…），每次再向下隨機縮短最多 20%；
+// 連線撐過 5s 才算穩定並歸零計數
+createWsContext({ url: "ws://localhost:8080", reconnectMs: 1000 });
+```
+
+`reconnectMinUptimeMs` 是退避能否生效的關鍵：若 server 接受連線後立刻斷線（flapping），設成 `0` 會讓每次 `open` 都歸零計數，退避與 `reconnectMax` 永遠停在第一階。
+
+要回到固定間隔（0.6 之前的行為），把退避三項關掉即可：
+
+```ts
+createWsContext({
+  url: "ws://localhost:8080",
+  reconnectMs: 2000,
+  reconnectBackoff: 1,
+  reconnectJitter: 0,
+  reconnectMinUptimeMs: 0,
+});
+```
 
 #### 回傳值
 
@@ -154,14 +181,14 @@ createWsContext(options)
 
 負責建立、維護與銷毀原生 `WebSocket` 實例。
 
-| 行為                                               | 說明                                                                                                                                                                                                       |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WsProvider` 載入且 `autoConnect: true`            | 自動連線                                                                                                                                                                                                   |
-| 卸載                                               | 取消重連（`reconnectAttempt` 與 `reconnectExhausted` 歸零）、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`） |
-| `disconnect()`                                     | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                             |
-| 重連                                               | 非主動斷線且 `reconnectMs > 0` 時，以固定間隔重試（無指數退避）；`reconnectMax > 0` 時超過次數即停止                                                                                                       |
-| `connect()` 時已有舊 socket                        | 先 `new WebSocket`；成功後才關閉舊 socket 並觸發 `close`（reason: `"reconnect"`）。建構失敗則保留舊線                                                                                                      |
-| getter 丟出、空 URL、或 `new WebSocket` 同步 throw | emit `"error"`；不開新線、不拆現有線；`connect()` 不 throw。若重連計時器已觸發：`status: "closed"`、`phase: "stopped"`，不再自動重試                                                                       |
+| 行為                                               | 說明                                                                                                                                                                                                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WsProvider` 載入且 `autoConnect: true`            | 自動連線                                                                                                                                                                                                                                                    |
+| 卸載                                               | 取消重連（`reconnectAttempt` 與 `reconnectExhausted` 歸零）、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`）                                                  |
+| `disconnect()`                                     | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                                                                              |
+| 重連                                               | 非主動斷線且 `reconnectMs > 0` 時重試；等待時間為 `reconnectMs * reconnectBackoff ** (次數 - 1)`，受 `reconnectDelayMaxMs` 硬上限，再向下抖動最多 `reconnectJitter` 比例；`reconnectMax > 0` 時超過次數即停止；連線維持滿 `reconnectMinUptimeMs` 才歸零計數 |
+| `connect()` 時已有舊 socket                        | 先 `new WebSocket`；成功後才關閉舊 socket 並觸發 `close`（reason: `"reconnect"`）。建構失敗則保留舊線                                                                                                                                                       |
+| getter 丟出、空 URL、或 `new WebSocket` 同步 throw | emit `"error"`；不開新線、不拆現有線；`connect()` 不 throw。若重連計時器已觸發：`status: "closed"`、`phase: "stopped"`，不再自動重試                                                                                                                        |
 
 ---
 
@@ -207,7 +234,7 @@ interface WsState {
   /**
    * 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1）。
    * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
-   * 成功 `open`、主動 `disconnect()` 歸零。手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等成功 `open` 才歸零。
+   * 成功 `open`（設 `reconnectMinUptimeMs` 時為連線維持該時間後）、主動 `disconnect()` 歸零。手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等成功 `open` 才歸零。
    */
   reconnectAttempt: number;
   /** 本輪自動重連已達 `reconnectMax` 且最後一次也失敗；`connect()` / `disconnect()` 歸 `false` */
@@ -353,15 +380,15 @@ createWsContext({
 
 ## 設計取捨與限制
 
-| 項目           | 說明                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------ |
-| 策略凍結       | getter／靜態值在 create 時固定；每次握手重新取值。要換「怎麼組」URL／protocols，請再 `createWsContext` |
-| 重連策略       | 固定間隔，無指數退避；`reconnectMax > 0` 可限制次數                                                    |
-| SSR            | 不在 server 建立 `WebSocket`；`connect()` 在 `window` 不存在時不執行任何動作（no-op）                  |
-| 錯誤狀態       | 不設 `"error"` 狀態值；請監聽 `useWsEvents("error")`                                                   |
-| `WsState` 範圍 | 只含連線健康／重連；訊息與業務資料不走可訂閱狀態                                                       |
-| 訊息與渲染     | 只呼叫 `useWsActions` 的元件不會因狀態或訊息重繪                                                       |
-| 狀態更新       | 欄位值未變不觸發重繪；建議以選取器只訂閱需要的欄位                                                     |
+| 項目           | 說明                                                                                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 策略凍結       | getter／靜態值在 create 時固定；每次握手重新取值。要換「怎麼組」URL／protocols，請再 `createWsContext`                                                          |
+| 重連策略       | 預設指數退避 + 向下抖動（`reconnectBackoff`、`reconnectDelayMaxMs`、`reconnectJitter`），設 `reconnectBackoff: 1` 可回到固定間隔；`reconnectMax > 0` 可限制次數 |
+| SSR            | 不在 server 建立 `WebSocket`；`connect()` 在 `window` 不存在時不執行任何動作（no-op）                                                                           |
+| 錯誤狀態       | 不設 `"error"` 狀態值；請監聽 `useWsEvents("error")`                                                                                                            |
+| `WsState` 範圍 | 只含連線健康／重連；訊息與業務資料不走可訂閱狀態                                                                                                                |
+| 訊息與渲染     | 只呼叫 `useWsActions` 的元件不會因狀態或訊息重繪                                                                                                                |
+| 狀態更新       | 欄位值未變不觸發重繪；建議以選取器只訂閱需要的欄位                                                                                                              |
 
 ---
 

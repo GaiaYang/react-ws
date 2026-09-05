@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-06
+
+### Added
+
+- `reconnectBackoff` — exponential backoff factor; attempt `n` waits `reconnectMs * reconnectBackoff ** (n - 1)`. Values below `1` are clamped to `1`
+- `reconnectDelayMaxMs` — hard cap for a single reconnect delay (jitter included); `0` uncapped, still clamped to the `setTimeout` limit
+- `reconnectJitter` — random jitter ratio in `[0, 1]`; the delay is shortened to `[backoff * (1 - ratio), backoff]`, so the cap stays hard and delays keep spreading once the backoff sits at the cap (`1` is full jitter)
+- `reconnectMinUptimeMs` — a connection must stay open this long before `reconnectAttempt` / `reconnectExhausted` reset, so a server that accepts and immediately closes (flapping) can no longer pin backoff and `reconnectMax` to the first step
+- Reconnect smoke tests: backoff schedule, hard cap under jitter, factor clamping, and both flapping / stable-connection reset paths
+
+### Changed
+
+- Reconnect option JSDoc and README (EN / zh-TW) describe the reconnect behavior in user terms (what the wait looks like, when to change each knob) instead of restating the formula
+- `reconnectDelay` documents why the order is backoff → cap → downward jitter: the cap stays hard and delays keep spreading once the backoff sits at the cap
+
+### Breaking
+
+- Reconnect defaults now include backoff and jitter: `reconnectBackoff: 2`, `reconnectDelayMaxMs: 30000`, `reconnectJitter: 0.2`, `reconnectMinUptimeMs: 5000`. Reconnect itself is still opt-in via `reconnectMs`. For the previous fixed-interval behavior, pass `reconnectBackoff: 1`, `reconnectJitter: 0`, `reconnectMinUptimeMs: 0`
+- `reconnectAttempt` / `reconnectExhausted` reset `reconnectMinUptimeMs` after `open` instead of immediately (set it to `0` to restore)
+
 ## [0.5.0] - 2026-09-01
 
 ### Added

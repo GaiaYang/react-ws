@@ -66,6 +66,8 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 `url` / `protocols` may also be sync getters, resolved at the start of each `connect()`.
 
+Reconnect is off until `reconnectMs > 0`; once on, retries back off and jitter by default (2s, 4s, 8s… capped at 30s). Pass `reconnectBackoff: 1` for a fixed interval.
+
 ## License
 
 [MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments (zustand, nanoevents): [`packages/react-ws/README.md#acknowledgments`](./packages/react-ws/README.md#acknowledgments).

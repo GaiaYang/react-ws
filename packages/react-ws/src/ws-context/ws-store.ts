@@ -47,7 +47,7 @@ export type WsState = {
    *
    * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
    *
-   * 成功 `open`、主動 `disconnect()` 歸零。
+   * 成功 `open`、主動 `disconnect()` 歸零；設 `reconnectMinUptimeMs` 時，改為連線維持該時間後才歸零。
    *
    * 手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等成功 `open` 才歸零。
    */

@@ -156,6 +156,10 @@ describe("createWsContext smoke", () => {
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
+      // 固定間隔、open 即歸零：這裡只驗 provider 的重連流程，退避數學看 reconnect.smoke.test.ts
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
     });
 
     function Probe() {
@@ -218,6 +222,9 @@ describe("createWsContext smoke", () => {
       autoConnect: true,
       reconnectMs: 100,
       reconnectMax: 2,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
     });
 
     let api!: ReturnType<typeof useWsActions>;

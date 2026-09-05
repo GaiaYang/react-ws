@@ -31,9 +31,9 @@ export interface CreateWsContextOptions {
    */
   autoConnect?: boolean;
   /**
-   * 非主動斷線後，自動重連的間隔（毫秒）。
+   * 非主動斷線後，第一次自動重連要等多久（毫秒）。
    *
-   * `0` 表示不重連。
+   * `0` 表示不自動重連。之後每次的等待預設會逐次加倍並隨機錯開，見 `reconnectBackoff`。
    *
    * @default 0
    */
@@ -46,6 +46,50 @@ export interface CreateWsContextOptions {
    * @default 0
    */
   reconnectMax?: number;
+  /**
+   * 每重連一次，下次要等的時間放大幾倍。
+   *
+   * 預設 `2` 表示等待逐次加倍，讓 server 有時間恢復：`reconnectMs: 1000` 時依序等 1、2、4、8 秒。
+   * 設 `1` 則每次都等 `reconnectMs`（固定間隔）；小於 `1` 會夾回 `1`。
+   *
+   * 成長的天花板用 `reconnectDelayMaxMs` 控制。
+   *
+   * @default 2
+   */
+  reconnectBackoff?: number;
+  /**
+   * 單次重連最多等多久（毫秒）。
+   *
+   * 等待再怎麼放大都不會超過這個值，抖動後也不會，預設 30 秒表示等到 30 秒就不再往上長。
+   *
+   * `0` 表示不設天花板：搭配 `reconnectBackoff > 1` 時等待會一路加倍，通常不建議。
+   *
+   * @default 30000
+   */
+  reconnectDelayMaxMs?: number;
+  /**
+   * 把每個 client 的等待時間隨機錯開的幅度，取值 `[0, 1]`（超出會夾回）。
+   *
+   * 預設 `0.2` 表示實際只等預定時間的 80% 到 100%（預定 10 秒 → 隨機等 8 到 10 秒），
+   * 避免 server 重啟後所有 client 在同一瞬間湧入。
+   *
+   * 要錯得更開就調高，`1` 是完全隨機（0 到預定時間之間）；`0` 則每次都等足預定時間。
+   *
+   * @default 0.2
+   */
+  reconnectJitter?: number;
+  /**
+   * 連線要撐多久（毫秒）才算真的連上。
+   *
+   * 撐過這段時間才會把 `reconnectAttempt`、`reconnectExhausted` 歸零，下次斷線也才從
+   * `reconnectMs` 重新開始等。
+   *
+   * 預設 5 秒是為了應付 server 收下連線後立刻又斷開的情況：設 `0` 會讓每個短命連線都清掉
+   * 重連進度，等待永遠停在最短的第一階，`reconnectMax` 也永遠算不完。
+   *
+   * @default 5000
+   */
+  reconnectMinUptimeMs?: number;
   /**
    * 未連線時，待送訊息的佇列上限。
    *
