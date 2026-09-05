@@ -58,6 +58,8 @@ export interface ReconnectCallbacks {
   setAttempt: (attempt: number) => void;
   /** 寫入 store 的 `reconnectExhausted` */
   setExhausted: (exhausted: boolean) => void;
+  /** 寫入 store 的 `nextReconnectAt`；非等待中為 `0` */
+  setNextAt: (at: number) => void;
 }
 
 export interface Reconnect {
@@ -119,10 +121,19 @@ export function createReconnect(
     callbacks.setExhausted(false);
   };
 
+  /** 只在等待重連時有值；自行記著上次寫的值，避免無變化也去動 store */
+  let nextAt = 0;
+  const setNextAt = (at: number) => {
+    if (nextAt === at) return;
+    nextAt = at;
+    callbacks.setNextAt(at);
+  };
+
   return {
     onConnectBegin() {
       clearTimer();
       clearUptimeTimer();
+      setNextAt(0);
       intentionalClose = false;
       const reconnecting = fromTimer;
       if (!fromTimer) resetCycle();
@@ -158,19 +169,20 @@ export function createReconnect(
       const next = attempt + 1;
       callbacks.setAttempt(next);
       fromTimer = true;
-      timer = setTimeout(
-        () => {
-          timer = null;
-          onReconnect();
-        },
-        reconnectDelay(next, options),
-      );
+      const delay = reconnectDelay(next, options);
+      setNextAt(Date.now() + delay);
+      timer = setTimeout(() => {
+        timer = null;
+        onReconnect();
+      }, delay);
       return true;
     },
 
     clearTimerTrigger() {
       if (!fromTimer || timer != null) return false;
       fromTimer = false;
+      // 計時器已觸發但沒開成線，這個時間點已經過去了
+      setNextAt(0);
       return true;
     },
 
@@ -178,6 +190,7 @@ export function createReconnect(
       intentionalClose = true;
       clearTimer();
       clearUptimeTimer();
+      setNextAt(0);
       resetCycle();
     },
 

@@ -49,7 +49,8 @@ export type WsState = {
    *
    * 成功 `open`、主動 `disconnect()` 歸零；設 `reconnectMinUptimeMs` 時，改為連線維持該時間後才歸零。
    *
-   * 手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等成功 `open` 才歸零。
+   * 手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等 `open` 後撐滿
+   * `reconnectMinUptimeMs` 才歸零。
    */
   reconnectAttempt: number;
   /**
@@ -58,6 +59,13 @@ export type WsState = {
    * 手動 `connect()` 或 `disconnect()` 設定為 `false`
    */
   reconnectExhausted: boolean;
+  /**
+   * 下次自動重連的預定時間（`Date.now()` 時間軸的毫秒數）。
+   *
+   * 未在等待重連時為 `0`。等待中可用 `nextReconnectAt - Date.now()` 做倒數；
+   * 因為等待時間有退避與隨機抖動，這個值是唯一能得知本次要等多久的來源。
+   */
+  nextReconnectAt: number;
 };
 
 export type WsStoreApi = StoreApi<WsState>;
@@ -71,6 +79,7 @@ export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
     phase,
     reconnectAttempt: 0,
     reconnectExhausted: false,
+    nextReconnectAt: 0,
   });
 }
 

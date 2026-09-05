@@ -50,6 +50,7 @@ export interface CreateWsContextOptions {
    * 每重連一次，下次要等的時間放大幾倍。
    *
    * 預設 `2` 表示等待逐次加倍，讓 server 有時間恢復：`reconnectMs: 1000` 時依序等 1、2、4、8 秒。
+   *
    * 設 `1` 則每次都等 `reconnectMs`（固定間隔）；小於 `1` 會夾回 `1`。
    *
    * 成長的天花板用 `reconnectDelayMaxMs` 控制。

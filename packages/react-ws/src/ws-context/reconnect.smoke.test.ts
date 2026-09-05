@@ -4,6 +4,7 @@ import { createReconnect, reconnectDelay } from "./reconnect";
 function createCallbacks() {
   let attempt = 0;
   let exhausted = false;
+  let nextAt = 0;
   return {
     refs: {
       get attempt() {
@@ -11,6 +12,9 @@ function createCallbacks() {
       },
       get exhausted() {
         return exhausted;
+      },
+      get nextAt() {
+        return nextAt;
       },
     },
     callbacks: {
@@ -20,6 +24,9 @@ function createCallbacks() {
       },
       setExhausted: (v: boolean) => {
         exhausted = v;
+      },
+      setNextAt: (at: number) => {
+        nextAt = at;
       },
     },
   };
@@ -102,6 +109,29 @@ describe("reconnect", () => {
     expect(reconnect.scheduleAfterClose()).toBe(false);
     expect(refs.attempt).toBe(0);
     expect(refs.exhausted).toBe(false);
+    expect(refs.nextAt).toBe(0);
+  });
+
+  it("exposes the scheduled reconnect time only while waiting", () => {
+    const { refs, callbacks } = createCallbacks();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 0 },
+      callbacks,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(refs.nextAt).toBe(0);
+
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    expect(refs.nextAt - Date.now()).toBe(100);
+
+    // 計時器觸發後開始連線，不再是等待中
+    vi.advanceTimersByTime(100);
+    reconnect.onConnectBegin();
+    expect(refs.nextAt).toBe(0);
   });
 
   it("clearTimerTrigger only after the timer has fired", () => {
@@ -117,11 +147,14 @@ describe("reconnect", () => {
     reconnect.onConnectBegin();
     expect(reconnect.scheduleAfterClose()).toBe(true);
     expect(reconnect.clearTimerTrigger()).toBe(false);
+    // 計時器還在跑，預定時間仍然有效
+    expect(refs.nextAt).not.toBe(0);
 
     vi.advanceTimersByTime(100);
     expect(onReconnect).toHaveBeenCalledTimes(1);
     expect(reconnect.clearTimerTrigger()).toBe(true);
     expect(refs.attempt).toBe(1);
+    expect(refs.nextAt).toBe(0);
 
     reconnect.onConnectBegin();
     expect(refs.attempt).toBe(0);

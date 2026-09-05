@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `reconnectDelayMaxMs` — hard cap for a single reconnect delay (jitter included); `0` uncapped, still clamped to the `setTimeout` limit
 - `reconnectJitter` — random jitter ratio in `[0, 1]`; the delay is shortened to `[backoff * (1 - ratio), backoff]`, so the cap stays hard and delays keep spreading once the backoff sits at the cap (`1` is full jitter)
 - `reconnectMinUptimeMs` — a connection must stay open this long before `reconnectAttempt` / `reconnectExhausted` reset, so a server that accepts and immediately closes (flapping) can no longer pin backoff and `reconnectMax` to the first step
-- Reconnect smoke tests: backoff schedule, hard cap under jitter, factor clamping, and both flapping / stable-connection reset paths
+- `WsState.nextReconnectAt` — when the scheduled reconnect is due (`Date.now()` ms, `0` while not waiting), so a countdown UI can still tell how long the wait is now that backoff and jitter make it unpredictable
+- Reconnect smoke tests: backoff schedule, hard cap under jitter, factor clamping, both flapping / stable-connection reset paths, and `nextReconnectAt` lifetime
 
 ### Changed
 
 - Reconnect option JSDoc and README (EN / zh-TW) describe the reconnect behavior in user terms (what the wait looks like, when to change each knob) instead of restating the formula
 - `reconnectDelay` documents why the order is backoff → cap → downward jitter: the cap stays hard and delays keep spreading once the backoff sits at the cap
+- `reconnectAttempt` docs no longer say a pending-timer `connect()` resets on `open`; it resets once that connection survives `reconnectMinUptimeMs`
 
 ### Breaking
 

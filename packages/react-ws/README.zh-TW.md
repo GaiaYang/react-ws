@@ -110,7 +110,7 @@ createWsContext(options)
 ```
 
 - **同一應用可多次呼叫 `createWsContext`**，每次產生一組互不共用的 Provider 與 hooks（例如同時連業務 WS 與通知 WS）。
-- **`WsState` 只放連線層、低頻欄位** — 連線健康（`status`、`phase`）、重連進度（`reconnectAttempt`、`reconnectExhausted`）。**不放**訊息內容或業務資料。
+- **`WsState` 只放連線層、低頻欄位** — 連線健康（`status`、`phase`）、重連進度（`reconnectAttempt`、`reconnectExhausted`、`nextReconnectAt`）。**不放**訊息內容或業務資料。
 - **訊息與錯誤事件** — 請用 `useWsEvents`；訊息歷史請自行寫入 React 狀態、快取或自有狀態管理。
 - **連線錯誤不反映在 `WsStatus`** — 請用 `useWsEvents("error", …)` 處理；原生 `error` 事件後通常緊接 `close`。
 
@@ -181,14 +181,14 @@ createWsContext({
 
 負責建立、維護與銷毀原生 `WebSocket` 實例。
 
-| 行為                                               | 說明                                                                                                                                                                                                                                                        |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WsProvider` 載入且 `autoConnect: true`            | 自動連線                                                                                                                                                                                                                                                    |
-| 卸載                                               | 取消重連（`reconnectAttempt` 與 `reconnectExhausted` 歸零）、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`）                                                  |
-| `disconnect()`                                     | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                                                                              |
-| 重連                                               | 非主動斷線且 `reconnectMs > 0` 時重試；等待時間為 `reconnectMs * reconnectBackoff ** (次數 - 1)`，受 `reconnectDelayMaxMs` 硬上限，再向下抖動最多 `reconnectJitter` 比例；`reconnectMax > 0` 時超過次數即停止；連線維持滿 `reconnectMinUptimeMs` 才歸零計數 |
-| `connect()` 時已有舊 socket                        | 先 `new WebSocket`；成功後才關閉舊 socket 並觸發 `close`（reason: `"reconnect"`）。建構失敗則保留舊線                                                                                                                                                       |
-| getter 丟出、空 URL、或 `new WebSocket` 同步 throw | emit `"error"`；不開新線、不拆現有線；`connect()` 不 throw。若重連計時器已觸發：`status: "closed"`、`phase: "stopped"`，不再自動重試                                                                                                                        |
+| 行為                                               | 說明                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WsProvider` 載入且 `autoConnect: true`            | 自動連線                                                                                                                                                                                                                                                                                            |
+| 卸載                                               | 取消重連（`reconnectAttempt` 與 `reconnectExhausted` 歸零）、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`）                                                                                          |
+| `disconnect()`                                     | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                                                                                                                      |
+| 重連                                               | 非主動斷線且 `reconnectMs > 0` 時重試；等待時間為 `reconnectMs * reconnectBackoff ** (次數 - 1)`，受 `reconnectDelayMaxMs` 硬上限，再向下抖動最多 `reconnectJitter` 比例；`reconnectMax > 0` 時超過次數即停止；連線維持滿 `reconnectMinUptimeMs` 才歸零計數；等待中的預定時間寫入 `nextReconnectAt` |
+| `connect()` 時已有舊 socket                        | 先 `new WebSocket`；成功後才關閉舊 socket 並觸發 `close`（reason: `"reconnect"`）。建構失敗則保留舊線                                                                                                                                                                                               |
+| getter 丟出、空 URL、或 `new WebSocket` 同步 throw | emit `"error"`；不開新線、不拆現有線；`connect()` 不 throw。若重連計時器已觸發：`status: "closed"`、`phase: "stopped"`，不再自動重試                                                                                                                                                                |
 
 ---
 
@@ -234,17 +234,22 @@ interface WsState {
   /**
    * 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1）。
    * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
-   * 成功 `open`（設 `reconnectMinUptimeMs` 時為連線維持該時間後）、主動 `disconnect()` 歸零。手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等成功 `open` 才歸零。
+   * 成功 `open`（設 `reconnectMinUptimeMs` 時為連線維持該時間後）、主動 `disconnect()` 歸零。手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等 `open` 後撐滿 `reconnectMinUptimeMs` 才歸零。
    */
   reconnectAttempt: number;
   /** 本輪自動重連已達 `reconnectMax` 且最後一次也失敗；`connect()` / `disconnect()` 歸 `false` */
   reconnectExhausted: boolean;
+  /**
+   * 下次自動重連的預定時間（`Date.now()` 時間軸的毫秒數），未在等待重連時為 `0`。
+   * 等待中可用 `nextReconnectAt - Date.now()` 做倒數；等待時間有退避與抖動，這是唯一能得知本次要等多久的來源。
+   */
+  nextReconnectAt: number;
 }
 ```
 
-| 適合放進可訂閱狀態                                          | 不適合                            |
-| ----------------------------------------------------------- | --------------------------------- |
-| `status`、`phase`、`reconnectAttempt`、`reconnectExhausted` | `lastMessage`、訊息歷史、業務資料 |
+| 適合放進可訂閱狀態                                                             | 不適合                            |
+| ------------------------------------------------------------------------------ | --------------------------------- |
+| `status`、`phase`、`reconnectAttempt`、`reconnectExhausted`、`nextReconnectAt` | `lastMessage`、訊息歷史、業務資料 |
 
 `reconnectMax` 等選項在 `createWsContext` 時即固定，**不會**出現在 `WsState`。取值後的 URL 字串也不會寫入。若 UI 要顯示「第 n 次／最多 m 次」，請在建立 context 時自行記下這些設定值。
 

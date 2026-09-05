@@ -88,6 +88,7 @@ export function createWsContext(options: CreateWsContextOptions) {
         setAttempt: (reconnectAttempt) => store.setState({ reconnectAttempt }),
         setExhausted: (reconnectExhausted) =>
           store.setState({ reconnectExhausted }),
+        setNextAt: (nextReconnectAt) => store.setState({ nextReconnectAt }),
       },
     );
     const outgoingQueue = useOutgoingQueue(outgoingQueueMax);

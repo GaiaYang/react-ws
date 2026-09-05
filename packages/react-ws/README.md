@@ -110,7 +110,7 @@ createWsContext(options)
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
-- **`WsState` holds low-frequency connection data only** — health (`status`, `phase`) and reconnect progress (`reconnectAttempt`, `reconnectExhausted`). **Not** message payloads or app data.
+- **`WsState` holds low-frequency connection data only** — health (`status`, `phase`) and reconnect progress (`reconnectAttempt`, `reconnectExhausted`, `nextReconnectAt`). **Not** message payloads or app data.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own state, cache, or store.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
 
@@ -181,14 +181,14 @@ createWsContext({
 
 Creates, owns, and tears down the native `WebSocket`.
 
-| Behavior                                            | Description                                                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `WsProvider` loads + `autoConnect: true`            | Auto-connects                                                                                                                                                                                                                                                                                                                        |
-| unmount                                             | Cancels reconnect (`reconnectAttempt` and `reconnectExhausted` reset), stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes the socket and fires `close` if one exists (reason: `"provider unmount"`)                                                                                   |
-| `disconnect()`                                      | Same cleanup and store reset as unmount, no auto-reconnect; fires `close` if a socket exists (reason: `"client disconnect"`)                                                                                                                                                                                                         |
-| reconnect                                           | Runs when `reconnectMs > 0` and close was not intentional; delay is `reconnectMs * reconnectBackoff ** (attempt - 1)`, hard-capped by `reconnectDelayMaxMs`, then shortened by a random ratio up to `reconnectJitter`; stops after `reconnectMax` if `> 0`. The cycle resets once a connection stays open for `reconnectMinUptimeMs` |
-| `connect()` with existing socket                    | Constructs the new socket first; on success, closes the previous one and fires `close` (reason: `"reconnect"`). If construction fails, the existing socket is left as-is                                                                                                                                                             |
-| getter throws, empty URL, or `new WebSocket` throws | Emits `"error"`; does not open a socket or close an existing one; `connect()` does not throw. If the reconnect timer had already fired: `status: "closed"`, `phase: "stopped"`, no further auto-retries                                                                                                                              |
+| Behavior                                            | Description                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WsProvider` loads + `autoConnect: true`            | Auto-connects                                                                                                                                                                                                                                                                                                                                                                                     |
+| unmount                                             | Cancels reconnect (`reconnectAttempt` and `reconnectExhausted` reset), stops liveness, clears outbound queue; syncs store to `status: "closed"`, `phase: "idle"`; closes the socket and fires `close` if one exists (reason: `"provider unmount"`)                                                                                                                                                |
+| `disconnect()`                                      | Same cleanup and store reset as unmount, no auto-reconnect; fires `close` if a socket exists (reason: `"client disconnect"`)                                                                                                                                                                                                                                                                      |
+| reconnect                                           | Runs when `reconnectMs > 0` and close was not intentional; delay is `reconnectMs * reconnectBackoff ** (attempt - 1)`, hard-capped by `reconnectDelayMaxMs`, then shortened by a random ratio up to `reconnectJitter`; stops after `reconnectMax` if `> 0`. The cycle resets once a connection stays open for `reconnectMinUptimeMs`; while waiting, the due time is written to `nextReconnectAt` |
+| `connect()` with existing socket                    | Constructs the new socket first; on success, closes the previous one and fires `close` (reason: `"reconnect"`). If construction fails, the existing socket is left as-is                                                                                                                                                                                                                          |
+| getter throws, empty URL, or `new WebSocket` throws | Emits `"error"`; does not open a socket or close an existing one; `connect()` does not throw. If the reconnect timer had already fired: `status: "closed"`, `phase: "stopped"`, no further auto-retries                                                                                                                                                                                           |
 
 ---
 
@@ -236,17 +236,23 @@ interface WsState {
    * Displayed as `n` means the nth reconnect is scheduled or in progress.
    * Reset on successful `open` (after `reconnectMinUptimeMs`, when set) and intentional `disconnect()`.
    * Manual `connect()` resets immediately when not waiting on a reconnect timer;
-   * if a timer is pending, wait for successful `open`.
+   * if a timer is pending, it resets once the connection has survived `reconnectMinUptimeMs`.
    */
   reconnectAttempt: number;
   /** `true` when `reconnectMax` is hit and the final attempt failed; cleared by `connect()` / `disconnect()` */
   reconnectExhausted: boolean;
+  /**
+   * When the next auto-reconnect is due, in `Date.now()` milliseconds; `0` while not waiting.
+   * Use `nextReconnectAt - Date.now()` for a countdown — with backoff and jitter this is the
+   * only way to know how long the current wait is.
+   */
+  nextReconnectAt: number;
 }
 ```
 
-| Belongs in store                                            | Does not belong                              |
-| ----------------------------------------------------------- | -------------------------------------------- |
-| `status`, `phase`, `reconnectAttempt`, `reconnectExhausted` | `lastMessage`, message history, app payloads |
+| Belongs in store                                                               | Does not belong                              |
+| ------------------------------------------------------------------------------ | -------------------------------------------- |
+| `status`, `phase`, `reconnectAttempt`, `reconnectExhausted`, `nextReconnectAt` | `lastMessage`, message history, app payloads |
 
 Options like `reconnectMax` are fixed at `createWsContext` and are **not** in `WsState`. Resolved URL strings are not stored either. To show UI like "attempt n of m", keep those config values alongside your component state.
 
