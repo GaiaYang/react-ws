@@ -26,7 +26,8 @@ export interface ReconnectOptions {
  * - 抖動只往下扣，等待頂到上限後各 client 仍會錯開；若改成上下對稱再夾回上限，
  *   會有一半樣本剛好落在上限值上，抖動就失效了
  *
- * `reconnectJitter: 1` 時即 AWS 那篇退避文章的 full jitter。
+ * `reconnectJitter: 1` 時即 AWS Exponential Backoff And Jitter 的 full jitter：
+ * https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
  */
 export function reconnectDelay(
   attempt: number,

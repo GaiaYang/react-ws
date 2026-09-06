@@ -24,9 +24,9 @@ A React **WebSocket connection-layer** package. It separates connection lifecycl
 | Item        | Version                                           |
 | ----------- | ------------------------------------------------- |
 | React       | >= 18 (`useSyncExternalStore`)                    |
-| Environment | Browser Client Component (native `WebSocket` API) |
+| Environment | Browser (native `WebSocket` API)                  |
 
-The package entry is marked `"use client"`. Modules that call `createWsContext` and components that use its hooks must live inside a Client boundary.
+The package entry is marked `"use client"` so RSC hosts (e.g. Next.js) can import it; a SPA ignores the directive. Call `createWsContext` and its hooks in the browser.
 
 ## Install
 
@@ -234,7 +234,8 @@ interface WsState {
   /**
    * Reconnects scheduled this cycle (+1 on unintentional close, not on success).
    * Displayed as `n` means the nth reconnect is scheduled or in progress.
-   * Reset on successful `open` (after `reconnectMinUptimeMs`, when set) and intentional `disconnect()`.
+   * Resets after the connection has stayed open for `reconnectMinUptimeMs`
+   * (default 5s; `0` resets on `open`). Intentional `disconnect()` resets immediately.
    * Manual `connect()` resets immediately when not waiting on a reconnect timer;
    * if a timer is pending, it resets once the connection has survived `reconnectMinUptimeMs`.
    */
@@ -260,12 +261,12 @@ Options like `reconnectMax` are fixed at `createWsContext` and are **not** in `W
 
 | Value        | Meaning       |
 | ------------ | ------------- |
-| `idle`       | Not connected |
+| `idle`       | Not connected yet (initial store only) |
 | `connecting` | Connecting    |
 | `open`       | Connected     |
 | `closed`     | Disconnected  |
 
-Maps to the current WebSocket connection state (similar to readyState). Does **not** express provider intent such as “in an auto-reconnect cycle” or “user disconnected” — use `phase` for that.
+Maps to the current WebSocket connection state (similar to readyState). `disconnect()` sets `status: "closed"` and `phase: "idle"` — `status` does not return to `idle`. Does **not** express provider intent such as “in an auto-reconnect cycle” or “user disconnected” — use `phase` for that.
 
 #### `WsPhase`
 
@@ -423,5 +424,7 @@ This package does **not** list zustand or nanoevents as npm dependencies. It inl
 
 - **Author:** [Andrey Sitnik](https://github.com/ai) (`ai`)
 - **License:** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
-- **Adapted from:** [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); React hook wrapper added in this package
+- **Adapted from:**
+  - Typed event dispatch — runtime nearly aligned with [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js); types are this package's subset
+  - React subscription wrapper — added in this package
 - **Files:** `src/ws-context/emitter.ts`, `src/ws-context/ws-events.ts`

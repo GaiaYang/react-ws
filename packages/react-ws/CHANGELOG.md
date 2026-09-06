@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Docs and comments only: `reconnectMinUptimeMs` default wording, `WsStatus.idle` vs `closed`, liveness JSDoc, EN/zh-TW acknowledgments, demo/stall comments
+
 ## [0.6.0] - 2026-09-06
 
 ### Added
@@ -27,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - Reconnect defaults now include backoff and jitter: `reconnectBackoff: 2`, `reconnectDelayMaxMs: 30000`, `reconnectJitter: 0.2`, `reconnectMinUptimeMs: 5000`. Reconnect itself is still opt-in via `reconnectMs`. For the previous fixed-interval behavior, pass `reconnectBackoff: 1`, `reconnectJitter: 0`, `reconnectMinUptimeMs: 0`
-- `reconnectAttempt` / `reconnectExhausted` reset `reconnectMinUptimeMs` after `open` instead of immediately (set it to `0` to restore)
+- `reconnectAttempt` / `reconnectExhausted` now reset only after the connection has stayed open for `reconnectMinUptimeMs` (default 5000), not immediately on `open`. Pass `0` to restore the previous reset-on-open behavior
 
 ## [0.5.0] - 2026-09-01
 

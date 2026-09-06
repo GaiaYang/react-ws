@@ -40,7 +40,7 @@ interface StallAckSocket {
 /**
  * message handler 開頭呼叫。
  * - `"handled"`：停滯控制訊息已處理
- * - `"suppressed"`：停滯中，略過業務邏輯
+ * - `"suppressed"`：停滯中，略過後續處理（含探活）
  * - `false`：交給業務 handler
  */
 export function interceptStallMessage(

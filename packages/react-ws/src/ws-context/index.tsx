@@ -41,6 +41,10 @@ function resolveMaybeGetter<T>(value: MaybeGetter<T>): T {
 }
 
 /**
+ * 建立一組綁定同一連線設定的 `WsProvider` 與 hooks。
+ *
+ * 策略（含 getter）在此次呼叫固定；執行期只透過 `connect`／`disconnect` 操作連線。
+ *
  * @example
  * ```ts
  * export const { WsProvider, useWsActions, useWsStore, useWsEvents } =

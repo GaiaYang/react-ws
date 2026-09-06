@@ -24,9 +24,9 @@ React 用的 **WebSocket 連線層**套件。將連線生命週期、可訂閱�
 | 項目     | 版本                                              |
 | -------- | ------------------------------------------------- |
 | React    | >= 18（依賴 `useSyncExternalStore`）              |
-| 執行環境 | 瀏覽器 Client Component（需原生 `WebSocket` API） |
+| 執行環境 | 瀏覽器（需原生 `WebSocket` API）                  |
 
-套件入口標有 `"use client"`。呼叫 `createWsContext` 的模組，以及使用其 hooks 的元件，皆須位於 Client 邊界內。
+套件入口標有 `"use client"`，方便 RSC 宿主（例如 Next.js）引用；SPA 會忽略此指令。請在瀏覽器呼叫 `createWsContext` 與其 hooks。
 
 ## 安裝
 
@@ -234,7 +234,10 @@ interface WsState {
   /**
    * 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1）。
    * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
-   * 成功 `open`（設 `reconnectMinUptimeMs` 時為連線維持該時間後）、主動 `disconnect()` 歸零。手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等 `open` 後撐滿 `reconnectMinUptimeMs` 才歸零。
+   * 連線維持 `reconnectMinUptimeMs` 後才歸零（預設 5 秒；`0` 則 `open` 即歸零）。
+   * 主動 `disconnect()` 立刻歸零。
+   * 手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等 `open` 後撐滿
+   * `reconnectMinUptimeMs` 才歸零。
    */
   reconnectAttempt: number;
   /** 本輪自動重連已達 `reconnectMax` 且最後一次也失敗；`connect()` / `disconnect()` 歸 `false` */
@@ -257,12 +260,12 @@ interface WsState {
 
 | 值           | 意義     |
 | ------------ | -------- |
-| `idle`       | 尚未連線 |
+| `idle`       | 尚未連線（僅初始 store） |
 | `connecting` | 連線中   |
 | `open`       | 已連線   |
 | `closed`     | 已斷線   |
 
-反映 WebSocket 當下的連線狀態（類似 readyState 映射）。**不含**「是否在自動重連週期」「是否為使用者主動斷線」等 Provider 意圖——請搭配 `phase`。
+反映 WebSocket 當下的連線狀態（類似 readyState 映射）。`disconnect()` 後為 `status: "closed"`、`phase: "idle"`，`status` 不會回到 `idle`。**不含**「是否在自動重連週期」「是否為使用者主動斷線」等 Provider 意圖——請搭配 `phase`。
 
 #### `WsPhase`
 

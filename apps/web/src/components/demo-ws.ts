@@ -18,7 +18,6 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
       timeoutMs: 5_000,
       ping: { type: "PING" },
       // DEMO 探活回應協議（須與 mock-ws/src/liveness.ts 對齊）
-      // 實際這裡要跟正式環境的探活回應協議對齊
       isPong: (data) =>
         typeof data === "object" &&
         data != null &&

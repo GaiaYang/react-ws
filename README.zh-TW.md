@@ -28,6 +28,7 @@ pnpm dev:mock         # 終端 1：mock server → ws://localhost:8080
 pnpm dev              # 終端 2：Demo → http://localhost:3000
 pnpm build:pkg        # 編譯 packages/react-ws → dist/
 pnpm typecheck        # 全 workspace 型別檢查
+pnpm test             # packages/react-ws smoke tests
 ```
 
 Demo 連線 `ws://localhost:8080`，需同時跑 `dev:mock` 與 `dev`（兩個終端）。`react-ws-context` 透過 `workspace:*` 讀取編譯後的 `dist/`；`pnpm dev` 會平行跑 `tsdown --watch` 與 Next.js，改套件原始碼時存檔即會重編譯。若只跑 `pnpm --filter @react-ws/web dev`（不含套件 watch），需先 `pnpm build:pkg`。

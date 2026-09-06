@@ -54,7 +54,7 @@ function formatPhaseDetail(
   }
 }
 
-/** 每個小元件各自訂閱需要的欄位，`nextReconnectAt` 這種高頻欄位才不會拖著整個面板重繪。 */
+/** 各自訂閱需要的欄位；倒數的 100ms tick 留在 `ReconnectCountdownRow`，才不會拖著整個面板重繪。 */
 function PhaseHeader() {
   const phase = useWsStore((state) => state.phase);
   const status = useWsStore((state) => state.status);
