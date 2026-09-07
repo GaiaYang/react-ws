@@ -661,4 +661,93 @@ describe("createWsContext smoke", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(phase()).toBe("stopped");
   });
+
+  it("connect is a no-op without WebSocket", async () => {
+    vi.stubGlobal("WebSocket", undefined);
+
+    const errors: Event[] = [];
+    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+      createWsContext({
+        url: "ws://test",
+        autoConnect: true,
+      });
+
+    let api!: ReturnType<typeof useWsActions>;
+
+    function Probe() {
+      api = useWsActions();
+      const status = useWsStore((s) => s.status);
+      useWsEvents("error", (event) => {
+        errors.push(event);
+      });
+      return createElement("div", null, status);
+    }
+
+    const { getByText } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+
+    expect(MockWebSocket.instances).toHaveLength(0);
+    expect(getByText("idle")).toBeTruthy();
+    expect(errors).toHaveLength(0);
+
+    await act(async () => {
+      api.connect();
+    });
+    expect(MockWebSocket.instances).toHaveLength(0);
+    expect(getByText("idle")).toBeTruthy();
+    expect(errors).toHaveLength(0);
+  });
+
+  it("synthetic close and error work without Event/CloseEvent constructors", async () => {
+    const errors: Event[] = [];
+    const closes: CloseEvent[] = [];
+    let shouldThrow = false;
+
+    const { WsProvider, useWsActions, useWsEvents } = createWsContext({
+      url: () => {
+        if (shouldThrow) throw new Error("no token");
+        return "ws://test";
+      },
+      autoConnect: true,
+    });
+
+    let api!: ReturnType<typeof useWsActions>;
+
+    function Probe() {
+      api = useWsActions();
+      useWsEvents("error", (event) => {
+        errors.push(event);
+      });
+      useWsEvents("close", (event) => {
+        closes.push(event);
+      });
+      return null;
+    }
+
+    render(createElement(WsProvider, null, createElement(Probe)));
+    const first = latestWs();
+    await act(async () => {
+      first.open();
+    });
+
+    vi.stubGlobal("Event", undefined);
+    vi.stubGlobal("CloseEvent", undefined);
+
+    shouldThrow = true;
+    await act(async () => {
+      api.connect();
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.type).toBe("error");
+    expect(first.readyState).toBe(MockWebSocket.OPEN);
+
+    await act(async () => {
+      api.disconnect();
+    });
+    const clientClose = closes.find((ev) => ev.reason === "client disconnect");
+    expect(clientClose?.type).toBe("close");
+    expect(clientClose?.code).toBe(1000);
+    expect(clientClose?.wasClean).toBe(true);
+  });
 });

@@ -106,7 +106,7 @@ export function createWsContext(options: CreateWsContextOptions) {
     /**
      * 主動斷線與 Provider unmount 共用 cleanup。
      *
-     * 關閉 socket 時以 `reason` 寫入 synthetic `close` 事件：
+     * 關閉 socket 時以 `reason` 寫入合成 `close` 事件（`type`／`code`／`reason`／`wasClean`）：
      * - `"client disconnect"` — `disconnect()`
      * - `"provider unmount"` — `WsProvider` unmount
      */
@@ -132,7 +132,7 @@ export function createWsContext(options: CreateWsContextOptions) {
     );
 
     const connect = useCallback<WsContextValue["connect"]>(() => {
-      if (typeof window === "undefined") return;
+      if (typeof globalThis.WebSocket === "undefined") return;
 
       let resolvedUrl: string;
       let resolvedProtocols: string | string[] | undefined;
@@ -149,7 +149,7 @@ export function createWsContext(options: CreateWsContextOptions) {
             ? new WebSocket(resolvedUrl)
             : new WebSocket(resolvedUrl, resolvedProtocols);
       } catch {
-        emitter.emit("error", new Event("error"));
+        emitter.emit("error", { type: "error" } as Event);
         if (reconnect.clearTimerTrigger()) {
           store.setState({ status: "closed", phase: "stopped" });
         }

@@ -21,12 +21,12 @@ React 用的 **WebSocket 連線層**套件。將連線生命週期、可訂閱�
 
 ## 環境需求
 
-| 項目     | 版本                                              |
-| -------- | ------------------------------------------------- |
-| React    | >= 18（依賴 `useSyncExternalStore`）              |
-| 執行環境 | 瀏覽器（需原生 `WebSocket` API）                  |
+| 項目     | 版本                                                                               |
+| -------- | ---------------------------------------------------------------------------------- |
+| React    | >= 18（依賴 `useSyncExternalStore`）                                               |
+| 執行環境 | 需有 `globalThis.WebSocket`（不依賴 `window` 與 DOM `Event`／`CloseEvent` 建構子） |
 
-套件入口標有 `"use client"`，方便 RSC 宿主（例如 Next.js）引用；SPA 會忽略此指令。請在瀏覽器呼叫 `createWsContext` 與其 hooks。
+套件入口標有 `"use client"`，方便 RSC 宿主（例如 Next.js）引用；SPA 會忽略此指令。`createWsContext` 與其 hooks 須在提供 `WebSocket` 的環境呼叫。
 
 ## 安裝
 
@@ -258,12 +258,12 @@ interface WsState {
 
 #### `WsStatus`
 
-| 值           | 意義     |
-| ------------ | -------- |
+| 值           | 意義                     |
+| ------------ | ------------------------ |
 | `idle`       | 尚未連線（僅初始 store） |
-| `connecting` | 連線中   |
-| `open`       | 已連線   |
-| `closed`     | 已斷線   |
+| `connecting` | 連線中                   |
+| `open`       | 已連線                   |
+| `closed`     | 已斷線                   |
 
 反映 WebSocket 當下的連線狀態（類似 readyState 映射）。`disconnect()` 後為 `status: "closed"`、`phase: "idle"`，`status` 不會回到 `idle`。**不含**「是否在自動重連週期」「是否為使用者主動斷線」等 Provider 意圖——請搭配 `phase`。
 
@@ -311,7 +311,7 @@ const canDisconnect =
 - `type` 變更**會**重新訂閱
 - 非預期斷線時，`close` 回呼執行前狀態已更新為 `status: "closed"` 及對應 `phase`
 - 主動 `disconnect()` 或 Provider 卸載亦同：先更新狀態，再觸發 `close` 事件（若當時有 socket）
-- getter 丟出、url 為空字串、或 `new WebSocket` 同步 throw 時 emit `"error"`（synthetic `Event`），不觸發 `close`、不替換現有 socket
+- getter 丟出、url 為空字串、或 `new WebSocket` 同步 throw 時 emit `"error"`（`{ type: "error" }`），不觸發 `close`、不替換現有 socket
 - 手動 `connect()` 在新 socket 建構成功後關閉舊線時，會先觸發 `close` 事件（reason: `"reconnect"`），再將狀態設為 `connecting`
 - 需監聽多種事件時，分別呼叫多次 `useWsEvents`
 
@@ -392,7 +392,7 @@ createWsContext({
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 策略凍結       | getter／靜態值在 create 時固定；每次握手重新取值。要換「怎麼組」URL／protocols，請再 `createWsContext`                                                          |
 | 重連策略       | 預設指數退避 + 向下抖動（`reconnectBackoff`、`reconnectDelayMaxMs`、`reconnectJitter`），設 `reconnectBackoff: 1` 可回到固定間隔；`reconnectMax > 0` 可限制次數 |
-| SSR            | 不在 server 建立 `WebSocket`；`connect()` 在 `window` 不存在時不執行任何動作（no-op）                                                                           |
+| SSR            | 不在 server 建立 `WebSocket`；`connect()` 在沒有 `globalThis.WebSocket` 時不執行任何動作（no-op）                                                               |
 | 錯誤狀態       | 不設 `"error"` 狀態值；請監聽 `useWsEvents("error")`                                                                                                            |
 | `WsState` 範圍 | 只含連線健康／重連；訊息與業務資料不走可訂閱狀態                                                                                                                |
 | 訊息與渲染     | 只呼叫 `useWsActions` 的元件不會因狀態或訊息重繪                                                                                                                |

@@ -21,12 +21,12 @@ A React **WebSocket connection-layer** package. It separates connection lifecycl
 
 ## Requirements
 
-| Item        | Version                                           |
-| ----------- | ------------------------------------------------- |
-| React       | >= 18 (`useSyncExternalStore`)                    |
-| Environment | Browser (native `WebSocket` API)                  |
+| Item        | Version                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| React       | >= 18 (`useSyncExternalStore`)                                                            |
+| Environment | `globalThis.WebSocket` (does not use `window` or DOM `Event` / `CloseEvent` constructors) |
 
-The package entry is marked `"use client"` so RSC hosts (e.g. Next.js) can import it; a SPA ignores the directive. Call `createWsContext` and its hooks in the browser.
+The package entry is marked `"use client"` so RSC hosts (e.g. Next.js) can import it; a SPA ignores the directive. Call `createWsContext` and its hooks where `WebSocket` is available.
 
 ## Install
 
@@ -259,12 +259,12 @@ Options like `reconnectMax` are fixed at `createWsContext` and are **not** in `W
 
 #### `WsStatus`
 
-| Value        | Meaning       |
-| ------------ | ------------- |
+| Value        | Meaning                                |
+| ------------ | -------------------------------------- |
 | `idle`       | Not connected yet (initial store only) |
-| `connecting` | Connecting    |
-| `open`       | Connected     |
-| `closed`     | Disconnected  |
+| `connecting` | Connecting                             |
+| `open`       | Connected                              |
+| `closed`     | Disconnected                           |
 
 Maps to the current WebSocket connection state (similar to readyState). `disconnect()` sets `status: "closed"` and `phase: "idle"` — `status` does not return to `idle`. Does **not** express provider intent such as “in an auto-reconnect cycle” or “user disconnected” — use `phase` for that.
 
@@ -312,7 +312,7 @@ Must be used inside the matching `WsProvider`. Subscribes on mount and unsubscri
 - Changing `type` **does** re-subscribe
 - On unintentional disconnect, the store is updated to `status: "closed"` and the appropriate `phase` before your `close` handler runs
 - Intentional `disconnect()` or provider unmount follows the same order: store first, then `close` fires (when a socket exists)
-- If the getter throws, the URL is empty, or `new WebSocket` throws, emits `"error"` (synthetic `Event`) without `close` and without replacing an existing socket
+- If the getter throws, the URL is empty, or `new WebSocket` throws, emits `"error"` (`{ type: "error" }`) without `close` and without replacing an existing socket
 - When `connect()` replaces an existing socket (after a successful construct), `close` fires on the previous socket (reason: `"reconnect"`), then the store moves to `connecting`
 - For multiple events, call `useWsEvents` multiple times
 
@@ -393,7 +393,7 @@ From the main `react-ws-context` entry:
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Frozen strategy | Getter functions / static values are fixed at create time; getters re-resolve on each handshake. To change how URL / protocols are built, call `createWsContext` again                                      |
 | Reconnect       | Exponential backoff with downward jitter by default (`reconnectBackoff`, `reconnectDelayMaxMs`, `reconnectJitter`); set `reconnectBackoff: 1` for a fixed interval; optional attempt cap via `reconnectMax` |
-| SSR             | No `WebSocket` on the server; `connect()` is a no-op without `window`                                                                                                                                       |
+| SSR             | No `WebSocket` on the server; `connect()` is a no-op when `globalThis.WebSocket` is missing                                                                                                                 |
 | Error status    | No `"error"` in `WsStatus`; use `useWsEvents("error")`                                                                                                                                                      |
 | `WsState` scope | Health / reconnect only — not messages or app data                                                                                                                                                          |
 | Rendering       | Components that only call `useWsActions` do not re-render on store or messages                                                                                                                              |

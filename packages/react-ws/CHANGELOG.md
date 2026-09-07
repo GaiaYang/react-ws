@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-07
+
 ### Changed
 
-- Docs and comments only: `reconnectMinUptimeMs` default wording, `WsStatus.idle` vs `closed`, liveness JSDoc, EN/zh-TW acknowledgments, demo/stall comments
+- `connect()` is a no-op when `globalThis.WebSocket` is missing, instead of checking `window`
+- Handshake `error` and client `close` are plain objects with the MDN fields (`type` / `code` / `reason` / `wasClean`), not `new Event` / `new CloseEvent`. Handler types remain `Event` / `CloseEvent`
+- README (EN / zh-TW): requirements and SSR describe the `WebSocket` global, not `window`
+
+### Added
+
+- Smoke tests: `connect()` without `WebSocket` is a no-op; synthetic close / error still work without DOM event constructors
 
 ## [0.6.0] - 2026-09-06
 
