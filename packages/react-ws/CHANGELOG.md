@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README (EN / zh-TW): rewrite the opening as a one-liner plus a short feature list
+
 ## [0.6.1] - 2026-09-07
 
 ### Changed
