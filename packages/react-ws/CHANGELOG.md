@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - README (EN / zh-TW): rewrite the opening as a one-liner plus a short feature list
+- README (EN / zh-TW): add a core concepts section after the quick start
+- README (EN / zh-TW): group the page into why, quick start, concepts, API, advanced behavior, and other
 
 ## [0.6.1] - 2026-09-07
 

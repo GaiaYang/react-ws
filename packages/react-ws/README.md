@@ -7,10 +7,12 @@
 
 `react-ws-context` is WebSocket for React.
 
+## Why use it
+
 - Messages never enter React state, so they do not re-render the tree.
 - Reconnect builds the new socket first and closes the old one only after that succeeds.
 - A failed handshake leaves the existing socket open.
-- Application-layer ping and a queue for sends while disconnected.
+- `liveness` is an application-layer heartbeat (ping and pong). There is an outgoing queue while disconnected.
 
 The Next.js demo is in [`apps/web`](https://github.com/GaiaYang/react-ws/tree/main/apps/web). The steps are in [Run the demo](https://github.com/GaiaYang/react-ws#run-the-demo).
 
@@ -32,7 +34,9 @@ pnpm add react-ws-context react
 
 The package entry is marked `"use client"`. Next.js App Router can import it. A SPA ignores the directive.
 
-## First create a context
+## Quick start
+
+### First create a context
 
 One `createWsContext` call returns a Provider and hooks.
 
@@ -50,7 +54,7 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 Each `createWsContext` call returns its own Provider and hooks. Two sockets need two calls, for example one for app traffic and one for notifications.
 
-## Then use the hooks
+### Then use the hooks
 
 ```tsx
 "use client";
@@ -82,32 +86,40 @@ function Chat() {
 
 In the `message` handler, write the payload into your own store.
 
+## Core concepts
+
+One `createWsContext` call is one socket. `WsProvider` holds that socket. Call the hooks inside the matching Provider.
+
+The three hooks do different jobs.
+
+- [`useWsActions`](#usewsactions): connection actions and sending. It does not subscribe to state.
+- [`useWsStore`](#usewsstore): subscribe to connection state.
+- [`useWsEvents`](#usewsevents): incoming messages and WebSocket events.
+
+## API reference
+
 This page documents [`createWsContext`](#createwscontext), [`WsProvider`](#wsprovider), [`useWsActions`](#usewsactions), [`useWsStore`](#usewsstore), [`useWsEvents`](#usewsevents), [`liveness`](#liveness), the [outgoing queue](#outgoing-queue), and the [exported types](#exported-types).
 
-## `createWsContext`
+### `createWsContext`
 
 `createWsContext(options)` returns a `WsProvider` and hooks bound to the same connection config. The getter or static value for `url` and `protocols`, and every other option, stays fixed for that call. After that, only `connect` and `disconnect` change the connection. A new getter or a static string needs a new `createWsContext` call.
 
-### Options
+#### Basic options
 
 `CreateWsContextOptions`
 
-| Field                  | Type                                      | Default   | Description                                                                                                                                     |
-| ---------------------- | ----------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                  | `MaybeGetter<string>`                     | required  | WebSocket URL. A sync getter runs at the start of each `connect()`.                                                                             |
-| `protocols`            | `MaybeGetter<string \| string[]>`         | none      | Passed to `new WebSocket(url, protocols)`. When omitted, the second argument is not passed. An empty string from a getter is passed through.    |
-| `autoConnect`          | `boolean`                                 | `true`    | Connect when `WsProvider` mounts.                                                                                                               |
-| `reconnectMs`          | `number`                                  | `0`       | First wait in ms after an unintentional close. `0` disables reconnect.                                                                          |
-| `reconnectMax`         | `number`                                  | `0`       | Max auto-reconnects after an unintentional close. `0` means no cap. Reconnect still requires `reconnectMs > 0`.                                 |
-| `reconnectBackoff`     | `number`                                  | `2`       | Multiplier for the next wait. Default `2` doubles it, so 1s then 2s then 4s. `1` keeps the wait unchanged. Values below `1` are clamped to `1`. |
-| `reconnectDelayMaxMs`  | `number`                                  | `30000`   | Hard cap in ms for one wait, jitter included. `0` removes the cap.                                                                              |
-| `reconnectJitter`      | `number`                                  | `0.2`     | Random shorten of each wait, in `[0, 1]`. Default `0.2` waits 80% to 100% of the scheduled delay. `1` is full jitter. `0` disables jitter.      |
-| `reconnectMinUptimeMs` | `number`                                  | `5000`    | How long a connection must stay open, in ms, before the reconnect cycle resets. `0` resets on `open`.                                           |
-| `outgoingQueueMax`     | `number`                                  | `0`       | Max outgoing queue size while not connected. `0` disables the queue.                                                                            |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | see below | Turns raw `MessageEvent.data` into app data.                                                                                                    |
-| `liveness`             | `LivenessOptions`                         | none      | Application-layer ping and pong. Disabled when omitted.                                                                                         |
+| Field              | Type                                      | Default   | Description                                                                                                              |
+| ------------------ | ----------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `url`              | `MaybeGetter<string>`                     | required  | WebSocket URL. A sync getter runs at the start of each `connect()`.                                                      |
+| `protocols`        | `MaybeGetter<string \| string[]>`         | none      | Passed to `new WebSocket(url, protocols)`. When omitted, the second argument is not passed. An empty string from a getter is passed through. |
+| `autoConnect`      | `boolean`                                 | `true`    | Connect when `WsProvider` mounts.                                                                                        |
+| `outgoingQueueMax` | `number`                                  | `0`       | Max outgoing queue size while not connected. `0` disables the queue.                                                     |
+| `parse`            | `(data: MessageEvent["data"]) => unknown` | see below | Turns raw `MessageEvent.data` into app data.                                                                             |
+| `liveness`         | `LivenessOptions`                         | none      | Application-layer heartbeat (ping and pong). Disabled when omitted.                                                      |
 
 Default `parse` runs `JSON.parse` on a string and returns the raw string if parse fails. It returns non-strings as-is.
+
+#### URL and protocols
 
 `url` and `protocols` may be a static value or a sync getter (`MaybeGetter<T>`). The getter runs at the start of each `connect()` and must be synchronous. `await` and hooks are not valid inside it. The app supplies the source, such as `localStorage`. This package does not handle auth.
 
@@ -123,7 +135,18 @@ createWsContext({
 });
 ```
 
-Handshake fails when the getter throws, the URL is empty, or `new WebSocket` throws. `connect()` then emits `"error"` and leaves any existing connection as-is. `connect()` itself does not throw. If the reconnect timer had already fired, auto-retry stops and `phase` becomes `"stopped"`. Auto-retry does not resume after that. A later `connect()` starts a new attempt.
+Handshake fails when the getter throws, the URL is empty, or `new WebSocket` throws. `connect()` then emits `"error"` and leaves any existing connection as-is. `connect()` itself does not throw.
+
+#### Reconnect
+
+| Field                  | Type     | Default | Description                                                                                                                                     |
+| ---------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reconnectMs`          | `number` | `0`     | First wait in ms after an unintentional close. `0` disables reconnect.                                                                          |
+| `reconnectMax`         | `number` | `0`     | Max auto-reconnects after an unintentional close. `0` means no cap. Reconnect still requires `reconnectMs > 0`.                                 |
+| `reconnectBackoff`     | `number` | `2`     | Multiplier for the next wait. Default `2` doubles it, so 1s then 2s then 4s. `1` keeps the wait unchanged. Values below `1` are clamped to `1`. |
+| `reconnectDelayMaxMs`  | `number` | `30000` | Hard cap in ms for one wait, jitter included. `0` removes the cap.                                                                              |
+| `reconnectJitter`      | `number` | `0.2`   | Random shorten of each wait, in `[0, 1]`. Default `0.2` waits 80% to 100% of the scheduled delay. `1` is full jitter. `0` disables jitter.      |
+| `reconnectMinUptimeMs` | `number` | `5000`  | How long a connection must stay open, in ms, before the reconnect cycle resets. `0` resets on `open`.                                           |
 
 Backoff and jitter apply as soon as `reconnectMs > 0`.
 
@@ -148,7 +171,9 @@ createWsContext({
 });
 ```
 
-### Returns
+If the reconnect timer had already fired when handshake fails, auto-retry stops and `phase` becomes `"stopped"`. Auto-retry does not resume after that. A later `connect()` starts a new attempt.
+
+#### Returns
 
 | Name           | Type                                 | Description                                   |
 | -------------- | ------------------------------------ | --------------------------------------------- |
@@ -157,7 +182,7 @@ createWsContext({
 | `useWsStore`   | `() => WsState` or `(selector) => T` | Connection state.                             |
 | `useWsEvents`  | `(type, handler) => void`            | WebSocket events.                             |
 
-## `WsProvider`
+### `WsProvider`
 
 `WsProvider` creates the native `WebSocket` and closes it when the Provider unmounts.
 
@@ -170,7 +195,7 @@ createWsContext({
 | `connect()` with an existing socket       | Constructs the new socket first. On success, closes the previous one and fires `close` with reason `"reconnect"`. If construction fails, the existing socket is left as-is.                                                                        |
 | Handshake failure                         | Emits `"error"`. Does not open a socket or close an existing one. The store is left as-is. If the reconnect timer had already fired, the store becomes `status: "closed"`, `phase: "stopped"`, and auto-retry stops.                               |
 
-## `useWsActions`
+### `useWsActions`
 
 `useWsActions(): WsContextValue`
 
@@ -186,7 +211,7 @@ The hook throws `"useWsActions 必須包在對應的 WsProvider 內"` when calle
 
 `send` and `sendJson` return `true` when the payload was sent or enqueued. They return `false` when the queue is full, the queue is disabled, or `sendJson` could not serialize.
 
-## `useWsStore`
+### `useWsStore`
 
 The hook throws `"useWsStore 必須包在對應的 WsProvider 內"` when called outside the matching `WsProvider`. It subscribes with `useSyncExternalStore`. It skips a re-render when the selected value is unchanged.
 
@@ -199,7 +224,7 @@ A call with no selector subscribes to the whole `WsState`, so a change to `nextR
 
 Incoming messages are not in this store. They arrive through `useWsEvents("message", ...)`.
 
-### `WsState`
+#### `WsState`
 
 | Field                | Type       | Description                                                                               |
 | -------------------- | ---------- | ----------------------------------------------------------------------------------------- |
@@ -217,7 +242,7 @@ With backoff and jitter, `nextReconnectAt - Date.now()` is the wait that is actu
 
 Options such as `reconnectMax` are fixed at `createWsContext` and are not in `WsState`. The URL used for a handshake is not stored either. A label such as "attempt n of m" needs those config values kept beside the component.
 
-### `WsStatus`
+#### `WsStatus`
 
 | Value        | Meaning                                                                    |
 | ------------ | -------------------------------------------------------------------------- |
@@ -230,7 +255,7 @@ Options such as `reconnectMax` are fixed at `createWsContext` and are not in `Ws
 
 `status` does not say whether the Provider is in an auto-reconnect cycle or the user disconnected. Read `phase` for that.
 
-### `WsPhase`
+#### `WsPhase`
 
 | Value          | Meaning                                                                               |
 | -------------- | ------------------------------------------------------------------------------------- |
@@ -253,7 +278,7 @@ const canDisconnect =
   phase === "open" || phase === "connecting" || phase === "reconnecting";
 ```
 
-## `useWsEvents`
+### `useWsEvents`
 
 `useWsEvents(type, handler)`
 
@@ -276,9 +301,11 @@ When `connect()` replaces an existing socket after a successful construct, `clos
 
 Each call subscribes to one `type`.
 
-## `liveness`
+## Advanced behavior
 
-Set `liveness` on `createWsContext` to enable it. Once connected, the Provider sends periodic application-layer pings. It writes them directly to the socket. They are not WebSocket control frames, and they do not use the outgoing queue. If no matching pong arrives within `timeoutMs`, the Provider closes the socket. That close may trigger reconnect when reconnect is enabled.
+### `liveness`
+
+`liveness` is an application-layer heartbeat (ping and pong). Set it on `createWsContext` to enable it. Once connected, the Provider sends periodic application-layer pings. It writes them directly to the socket. They are not WebSocket control frames, and they do not use the outgoing queue. If no matching pong arrives within `timeoutMs`, the Provider closes the socket. That close may trigger reconnect when reconnect is enabled.
 
 `LivenessOptions`
 
@@ -307,7 +334,7 @@ createWsContext({
 
 Every incoming message is checked with `isPong`. A pong clears the timeout timer and still fires `"message"`. The Provider sends ping payloads with `JSON.stringify`, so the ping body must be JSON-serializable.
 
-## Outgoing queue
+### Outgoing queue
 
 When `outgoingQueueMax > 0`:
 
@@ -320,7 +347,9 @@ When `outgoingQueueMax > 0`:
 | `WsProvider` unmount       | Clears the queue. Store reset matches `WsProvider`. |
 | Waiting for auto-reconnect | Keeps the queue.                                    |
 
-## Exported types
+## Other
+
+### Exported types
 
 From the main `react-ws-context` entry:
 
@@ -335,11 +364,11 @@ From the main `react-ws-context` entry:
 | `WsPhase`                | Connection phase.                               |
 | `WsState`                | Subscribable connection state.                  |
 
-## License
+### License
 
 [MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Source is [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws), package path `packages/react-ws`.
 
-## Acknowledgments
+### Acknowledgments
 
 This package does not list zustand or nanoevents as npm dependencies. It inlines the subsets it uses. Source files include attribution headers.
 
