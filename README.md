@@ -3,38 +3,42 @@
 [![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
 [![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
 
-> **繁體中文：** [README.zh-TW.md](./README.zh-TW.md)
+> [繁體中文](./README.zh-TW.md)
 
-React WebSocket **connection layer** monorepo. Publishable package: **`react-ws-context`** (`packages/react-ws`).
+This repository publishes the React WebSocket connection layer `react-ws-context` from `packages/react-ws`. `apps/web` is a Next.js demo. `apps/mock-ws` is a local WebSocket server at `ws://localhost:8080`.
 
-> **Maintainer:** [GaiaYang](https://github.com/GaiaYang) · **Repository:** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)
+Maintainer is [GaiaYang](https://github.com/GaiaYang). Repository is [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws).
 
-## Layout
+## Repository layout
 
 ```
 .
-├── packages/react-ws   # Package core: react-ws-context (zero runtime deps)
+├── packages/react-ws   # react-ws-context (no runtime npm dependencies)
 ├── apps/web            # Next.js demo
-└── apps/mock-ws        # Local mock WS (ws://localhost:8080)
+└── apps/mock-ws        # mock WS at ws://localhost:8080
 ```
 
-## Development
+## Run the demo
 
-**Run all commands from the monorepo root** (where `pnpm-workspace.yaml` lives):
+Run every command from the repository root, the directory that contains `pnpm-workspace.yaml`.
+
+1. Install workspace dependencies with `pnpm install`.
+2. In one terminal, run `pnpm dev:mock`. The mock server listens at `ws://localhost:8080`.
+3. In a second terminal, run `pnpm dev`. The demo is at http://localhost:3000.
+
+The demo connects to `ws://localhost:8080`. Both terminals need to be running.
+
+The demo imports `react-ws-context` through `workspace:*` from compiled `dist/`. `pnpm dev` runs `tsdown --watch` and Next.js in parallel, so saving a file in `packages/react-ws` rebuilds the package.
+
+If you run only `pnpm --filter @react-ws/web dev` without the package watch, run `pnpm build:pkg` first.
+
+Other commands from the root:
 
 ```bash
-pnpm install          # Install workspace dependencies
-pnpm dev:mock         # Terminal 1: mock server → ws://localhost:8080
-pnpm dev              # Terminal 2: demo → http://localhost:3000
-pnpm build:pkg        # Build packages/react-ws → dist/
-pnpm typecheck        # Typecheck entire workspace
+pnpm build:pkg        # Build packages/react-ws to dist/
+pnpm typecheck        # Typecheck the whole workspace
 pnpm test             # packages/react-ws smoke tests
 ```
-
-The demo connects to `ws://localhost:8080` — run `dev:mock` and `dev` in separate terminals.
-`react-ws-context` is consumed via `workspace:*` from compiled `dist/`.
-`pnpm dev` runs `tsdown --watch` and Next.js in parallel, so package source changes rebuild on save.
-If you run only `pnpm --filter @react-ws/web dev` (without the package watch), run `pnpm build:pkg` first.
 
 ### Add a dependency to a workspace package
 
@@ -44,7 +48,7 @@ pnpm --filter react-ws-context add -D some-dev-tool
 pnpm --filter @react-ws/mock-ws add ws
 ```
 
-## Install from npm
+## Install the published package
 
 ```bash
 pnpm add react-ws-context react
@@ -52,9 +56,7 @@ pnpm add react-ws-context react
 # or: yarn add react-ws-context react
 ```
 
-## Package usage (summary)
-
-Full API docs: **[`packages/react-ws/README.md`](./packages/react-ws/README.md)** (English) · **[繁中](./packages/react-ws/README.zh-TW.md)** · **[Changelog](./packages/react-ws/CHANGELOG.md)**
+API, options, and hook behavior are in [`packages/react-ws/README.md`](./packages/react-ws/README.md) (English), [the Traditional Chinese README](./packages/react-ws/README.zh-TW.md), and the [Changelog](./packages/react-ws/CHANGELOG.md).
 
 ```tsx
 "use client";
@@ -62,17 +64,14 @@ Full API docs: **[`packages/react-ws/README.md`](./packages/react-ws/README.md)*
 import { createWsContext } from "react-ws-context";
 
 export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
-  createWsContext({
-    url: "ws://localhost:8080",
-    reconnectMs: 2000,
-  });
+	createWsContext({
+		url: "ws://localhost:8080",
+		reconnectMs: 2000,
+	});
 ```
 
-`url` / `protocols` may also be sync getters, resolved at the start of each `connect()`.
-
-Reconnect is off by default; set `reconnectMs` to retry with exponential backoff and jitter.
-For a fixed wait that also resets on `open`, pass `reconnectBackoff: 1`, `reconnectJitter: 0`, and `reconnectMinUptimeMs: 0`.
+`url` and `protocols` may also be sync getters, resolved at the start of each `connect()`. Reconnect stays off while `reconnectMs` is `0`.
 
 ## License
 
-[MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments (zustand, nanoevents): [`packages/react-ws/README.md#acknowledgments`](./packages/react-ws/README.md#acknowledgments).
+[MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments for zustand and nanoevents are in [`packages/react-ws/README.md#acknowledgments`](./packages/react-ws/README.md#acknowledgments).

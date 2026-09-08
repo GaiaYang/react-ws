@@ -3,37 +3,26 @@
 [![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
 [![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
 
-> **English:** [README.md](./README.md)
+> [English](./README.md)
 
-React 用的 **WebSocket 連線層**套件。
-將連線生命週期、可訂閱狀態與訊息事件分離，避免連線狀態或高頻訊息讓整棵元件樹跟著重繪。
+`react-ws-context` 是 React 的 WebSocket 連線層。`createWsContext` 回傳綁定同一條連線的 `WsProvider` 與三個 hooks：`useWsActions` 送出與連線，`useWsStore` 讀連線狀態，`useWsEvents` 訂閱 `open`、`message`、`error`、`close`。傳入 `createWsContext` 的選項之後不會再改。套件不會把訊息寫進 React 狀態。
 
-> **維護者：** [GaiaYang](https://github.com/GaiaYang)  
-> **原始碼：** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)（monorepo 內路徑 `packages/react-ws`）
+套件沒有執行期 npm 依賴。`react >= 18` 是 peer 依賴。
 
-## 特性
+維護者是 [GaiaYang](https://github.com/GaiaYang)。原始碼在 [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)，套件路徑 `packages/react-ws`。
 
-- **零執行期依賴** — 僅需 `react >= 18`（peer 依賴）
-- **策略凍結** — `url`／`protocols` 的 getter（或靜態值）與其餘選項在 `createWsContext` 時固定；每次握手才取值。
-  之後無法改這些設定；連線用 `connect`／`disconnect` 控制
-- **渲染隔離** — 連線狀態以 `useWsStore` 訂閱；訊息以 `useWsEvents` 訂閱（不寫入 React 狀態）
-- **可選重連** — 預設關閉；設 `reconnectMs` 後才會重試，並帶指數退避與隨機抖動
-- **可選探活** — 週期性 ping／pong 偵測，逾時主動關閉 socket（若已啟用重連則可能接著重連）
-- **可選待送佇列** — socket 未連線時暫存待送訊息，連線成功後依序送出
+本頁說明 [`createWsContext`](#createwscontext)、[`WsProvider`](#wsprovider)、[`useWsActions`](#usewsactions)、[`useWsStore`](#usewsstore)、[`useWsEvents`](#usewsevents)、[`liveness`](#liveness)、[待送佇列](#待送佇列)、[匯出型別](#匯出型別)。
 
 ## 環境需求
 
-| 項目     | 需求                                         |
-| -------- | -------------------------------------------- |
-| React    | >= 18（`useSyncExternalStore`）              |
-| 執行環境 | 標準 `WebSocket`（`globalThis.WebSocket`）   |
+| 項目 | 需求 |
+| --- | --- |
+| React | >= 18（`useSyncExternalStore`） |
+| 執行環境 | `globalThis.WebSocket` |
 
-連線層不使用瀏覽器 `window`，也不用 DOM 的 `Event`／`CloseEvent` 建構子。
-`createWsContext` 與其 hooks 須在已有 `WebSocket` 的環境呼叫。
-沒有 `WebSocket` 時（例如 SSR），`connect()` 不執行任何動作（no-op）。
+連線層不使用 `window`，也不建構 DOM 的 `Event` 或 `CloseEvent`。`createWsContext` 與其 hooks 需要 `WebSocket` 這個 global。沒有 `WebSocket` 時，`connect()` 不執行任何動作。SSR 就是這種情況。
 
-套件入口標有 `"use client"`，方便在 Next.js App Router 這類環境引用。
-一般 SPA 會忽略此標記。
+套件入口標有 `"use client"`。Next.js App Router 可以直接引用。一般 SPA 會忽略此標記。
 
 ## 安裝
 
@@ -43,9 +32,7 @@ pnpm add react-ws-context react
 # or: yarn add react-ws-context react
 ```
 
-## 快速開始
-
-**1. 建立連線 context（通常放在獨立模組，只執行一次）**
+## 摘要
 
 ```tsx
 "use client";
@@ -53,34 +40,11 @@ pnpm add react-ws-context react
 import { createWsContext } from "react-ws-context";
 
 export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
-  createWsContext({
-    url: "ws://localhost:8080",
-    reconnectMs: 2000,
-  });
+	createWsContext({
+		url: "ws://localhost:8080",
+		reconnectMs: 2000,
+	});
 ```
-
-`url`／`protocols` 可為靜態值或**同步 getter**（`MaybeGetter<T>`），每次 `connect()` 開頭同步呼叫。
-不要 `await`，也不要在裡面用 hook。
-token 等來源由呼叫端提供（例如 `localStorage`）；套件不處理 auth。
-要換 getter 或改回靜態字串，請再 `createWsContext` 一次。
-
-```tsx
-createWsContext({
-  url: () => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) throw new Error("no token");
-    return `wss://api.example.com/ws?token=${encodeURIComponent(token)}`;
-  },
-  autoConnect: false,
-  reconnectMs: 2000,
-});
-```
-
-getter 失敗、URL 為空、或 `new WebSocket` 同步 throw 時，`connect()` 會發出 `"error"`，既有連線不受影響，`connect()` 本身也不會 throw。
-若重連計時器已觸發才失敗，會停止自動重試（`phase: "stopped"`）。
-修好來源後再手動 `connect()`。
-
-**2. 在應用中使用**
 
 ```tsx
 "use client";
@@ -88,331 +52,291 @@ getter 失敗、URL 為空、或 `new WebSocket` 同步 throw 時，`connect()` 
 import { WsProvider, useWsActions, useWsStore, useWsEvents } from "./ws";
 
 export function App({ children }: { children: React.ReactNode }) {
-  return <WsProvider>{children}</WsProvider>;
+	return <WsProvider>{children}</WsProvider>;
 }
 
 function Chat() {
-  const { sendJson } = useWsActions();
-  const status = useWsStore((s) => s.status);
+	const { sendJson } = useWsActions();
+	const status = useWsStore((s) => s.status);
 
-  useWsEvents("message", (data) => {
-    console.log("收到訊息", data);
-  });
+	useWsEvents("message", (data) => {
+		console.log("收到訊息", data);
+	});
 
-  return (
-    <button
-      disabled={status !== "open"}
-      onClick={() => sendJson({ type: "ping" })}
-    >
-      送出（{status}）
-    </button>
-  );
+	return (
+		<button
+			disabled={status !== "open"}
+			onClick={() => sendJson({ type: "ping" })}
+		>
+			送出（{status}）
+		</button>
+	);
 }
 ```
 
-## 核心概念
+每次 `createWsContext` 都回傳自己的 Provider 與 hooks。兩條 socket 要呼叫兩次，例如一條業務流量、一條通知。
 
-```
-createWsContext(options)
-        │
-        ├── WsProvider      管理 WebSocket 實例、重連、探活、待送佇列
-        ├── useWsActions()  連線操作（send / connect / disconnect / getStatus），不觸發重繪
-        ├── useWsStore()    訂閱連線狀態
-        └── useWsEvents()   訂閱 open / message / error / close 事件
-```
+`reconnectMs` 為 `0` 時，重連保持關閉。`liveness` 與待送佇列也要設定對應選項才會啟用。
 
-- **同一應用可多次呼叫 `createWsContext`**，每次產生一組互不共用的 Provider 與 hooks（例如同時連業務 WS 與通知 WS）。
-- **訊息與錯誤事件** — 請用 `useWsEvents`；訊息歷史請自行寫入 React 狀態、快取或自有狀態管理。
-- **連線錯誤不反映在 `WsStatus`** — 請用 `useWsEvents("error")` 處理；原生 `error` 事件後通常緊接 `close`。
+## `createWsContext`
 
----
+`createWsContext(options)` 回傳綁定同一份連線設定的 `WsProvider` 與 hooks。`url` 與 `protocols` 的 getter 或靜態值，以及其他選項，都在此次呼叫固定。之後只有 `connect` 與 `disconnect` 會改連線。要換 getter，或改回靜態字串，需要再呼叫一次 `createWsContext`。
 
-## API 參考
+### 選項
 
-### `createWsContext(options)`
+`CreateWsContextOptions`
 
-建立一組綁定同一連線設定的 `WsProvider` 與 hooks。
+| 欄位 | 型別 | 預設 | 說明 |
+| --- | --- | --- | --- |
+| `url` | `MaybeGetter<string>` | 必填 | WebSocket URL。同步 getter 在每次 `connect()` 開頭呼叫。 |
+| `protocols` | `MaybeGetter<string \| string[]>` | 無 | 傳入 `new WebSocket(url, protocols)`。省略時不傳第二個參數。getter 回傳的空字串會原樣傳入。 |
+| `autoConnect` | `boolean` | `true` | `WsProvider` 掛載時自動連線。 |
+| `reconnectMs` | `number` | `0` | 非主動斷線後，第一次重連要等的時間，單位毫秒。`0` 表示不重連。 |
+| `reconnectMax` | `number` | `0` | 非主動斷線後最多自動重連幾次。`0` 表示不限制。仍需 `reconnectMs > 0` 才會重連。 |
+| `reconnectBackoff` | `number` | `2` | 下次等待放大的倍率。預設 `2` 為逐次加倍，所以是 1s、2s、4s。`1` 不放大。小於 `1` 會夾回 `1`。 |
+| `reconnectDelayMaxMs` | `number` | `30000` | 單次等待的硬上限，單位毫秒，含抖動。`0` 表示不設上限。 |
+| `reconnectJitter` | `number` | `0.2` | 把每次等待隨機縮短的幅度，取值 `[0, 1]`。預設 `0.2` 表示實際等待為預定時間的 80% 到 100%。`1` 為 full jitter。`0` 不抖動。 |
+| `reconnectMinUptimeMs` | `number` | `5000` | 連線需維持多久才歸零重連週期，單位毫秒。`0` 表示 `open` 即歸零。 |
+| `outgoingQueueMax` | `number` | `0` | socket 未連線時的待送佇列上限。`0` 關閉佇列。 |
+| `parse` | `(data: MessageEvent["data"]) => unknown` | 見下方 | 將原始 `MessageEvent.data` 轉成業務資料。 |
+| `liveness` | `LivenessOptions` | 無 | 應用層 ping 與 pong。省略則不啟用。 |
 
-#### 參數：`CreateWsContextOptions`
+預設 `parse` 會對字串跑 `JSON.parse`，失敗則回傳原字串。非字串原樣回傳。
 
-| 欄位                   | 型別                                      | 預設     | 說明                                                                                                   |
-| ---------------------- | ----------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `url`                  | `MaybeGetter<string>`                     | （必填） | WebSocket 連線網址；同步 getter 在每次 `connect()` 開頭呼叫                                            |
-| `protocols`            | `MaybeGetter<string \| string[]>`         | —        | 傳入 `new WebSocket(url, protocols)`；省略此選項則不傳第二參數。getter 回傳空字串會原樣傳入            |
-| `autoConnect`          | `boolean`                                 | `true`   | `WsProvider` 載入時是否自動連線                                                                        |
-| `reconnectMs`          | `number`                                  | `0`      | 非主動斷線後的重連基礎間隔（毫秒），即第一次重連的等待；`0` 表示不重連                                 |
-| `reconnectMax`         | `number`                                  | `0`      | 非主動斷線後最多自動重連幾次；`0` 不限制（需 `reconnectMs > 0`）                                       |
-| `reconnectBackoff`     | `number`                                  | `2`      | 每次重連後，下次等待放大幾倍。預設 `2` 為逐次加倍（1s → 2s → 4s…）；`1` 不放大，小於 `1` 夾回 `1` |
-| `reconnectDelayMaxMs`  | `number`                                  | `30000`  | 單次等待的硬上限（毫秒），抖動後也不超過；`0` 不設上限                                                 |
-| `reconnectJitter`      | `number`                                  | `0.2`    | 把各 client 的等待隨機錯開的幅度，取值 `[0, 1]`。預設 `0.2` 表示實際等待為預定時間的 80%–100%；`1` 即 full jitter；`0` 不抖動 |
-| `reconnectMinUptimeMs` | `number`                                  | `5000`   | 連線需維持多久（毫秒）才算穩定、歸零重連計數；`0` 表示 `open` 即歸零                                   |
-| `outgoingQueueMax`     | `number`                                  | `0`      | socket 未連線時的待送佇列上限；`0` 關閉佇列                                                            |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | 見下方   | 將原始 `MessageEvent.data` 轉成業務資料                                                                |
-| `liveness`             | `LivenessOptions`                         | —        | 探活設定；省略則不啟用                                                                                 |
+`url` 與 `protocols` 可為靜態值或同步 getter（`MaybeGetter<T>`）。getter 在每次 `connect()` 開頭呼叫，而且必須同步。`await` 與 hook 都不能寫在 getter 裡。token 等來源由呼叫端提供，例如 `localStorage`。套件不處理 auth。
 
-**預設 `parse` 行為：**
-
-- `data` 為字串 → 嘗試 `JSON.parse`，失敗則原樣回傳
-- 非字串 → 原樣回傳
-
-**重連退避預設值：** 只要 `reconnectMs > 0`，退避與抖動即生效。
-
-```ts
-// 1s 起、每次乘 2、上限 30s（1s、2s、4s…），每次再向下隨機縮短最多 20%；
-// 連線撐過 5s 才算穩定並歸零計數
-createWsContext({ url: "ws://localhost:8080", reconnectMs: 1000 });
-```
-
-`reconnectMinUptimeMs` 是退避能否生效的關鍵。
-若 server 接受連線後立刻斷線（flapping），設成 `0` 會讓每次 `open` 都歸零計數，退避與 `reconnectMax` 永遠停在第一階。
-
-若要每次都等同一個間隔（不放大、不抖動），並在 `open` 時歸零計數：
-
-```ts
+```tsx
 createWsContext({
-  url: "ws://localhost:8080",
-  reconnectMs: 2000,
-  reconnectBackoff: 1,
-  reconnectJitter: 0,
-  reconnectMinUptimeMs: 0,
+	url: () => {
+		const token = localStorage.getItem("accessToken");
+		if (!token) throw new Error("no token");
+		return `wss://api.example.com/ws?token=${encodeURIComponent(token)}`;
+	},
+	autoConnect: false,
+	reconnectMs: 2000,
 });
 ```
 
-#### 回傳值
+握手失敗的情況是 getter 擲出錯誤、URL 為空，或 `new WebSocket` 擲出錯誤。此時 `connect()` 發出 `"error"`，既有連線不受影響。`connect()` 本身不會 throw。若重連計時器已經觸發才失敗，自動重試會停止，`phase` 變成 `"stopped"`。自動重試不會再繼續。之後的 `connect()` 才會開新的一次嘗試。
 
-| 名稱           | 型別                                 | 說明                         |
-| -------------- | ------------------------------------ | ---------------------------- |
-| `WsProvider`   | `React.FC<{ children }>`             | 包住需要此連線的子樹         |
-| `useWsActions` | `() => WsContextValue`               | 連線操作 API                 |
-| `useWsStore`   | `() => WsState` 或 `(selector) => T` | 訂閱連線狀態                 |
-| `useWsEvents`  | `(type, handler) => void`            | 訂閱 WebSocket 事件          |
+只要 `reconnectMs > 0`，退避與抖動就會生效。
 
----
+```ts
+// 從 1s 起、每次乘 2、上限 30s。
+// 每次再向下隨機縮短最多 20%。
+// socket 維持開啟 5s 後，reconnectAttempt 才歸零。
+createWsContext({ url: "ws://localhost:8080", reconnectMs: 1000 });
+```
 
-### `WsProvider`
+若 server 接受連線後立刻斷線，`reconnectMinUptimeMs: 0` 會讓每次 `open` 都歸零週期。退避與 `reconnectMax` 就會停在第一階。
 
-負責建立、維護與銷毀原生 `WebSocket` 實例。
+以下設定每次都等同一個間隔、不抖動，並在 `open` 時歸零週期。
 
-| 行為                                               | 說明                                                                                                                                                                                                                                                                                                |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `WsProvider` 載入且 `autoConnect: true`            | 自動連線                                                                                                                                                                                                                                                                                            |
-| 卸載                                               | 取消重連並歸零重連進度、停止探活、清空待送佇列；狀態同步為 `status: "closed"`、`phase: "idle"`；若有 socket 則關閉並觸發 `close` 事件（reason: `"provider unmount"`）                                                                                          |
-| `disconnect()`                                     | 與卸載相同的清理與狀態重置，但不觸發自動重連；若有 socket 則觸發 `close` 事件（reason: `"client disconnect"`）                                                                                                                                                                                      |
-| 重連                                               | 非主動斷線且 `reconnectMs > 0` 時重試。等待會逐次放大，並套用上限與隨機抖動（見上方選項）；`reconnectMax > 0` 時超過次數即停止。連線維持滿 `reconnectMinUptimeMs` 才歸零計數。等待中的預定時間在 `nextReconnectAt` |
-| `connect()` 時已有連線                             | 先 `new WebSocket`；成功後才關閉既有連線並觸發 `close`（reason: `"reconnect"`）。建構失敗則保留既有連線                                                                                                                                                                                               |
-| getter 失敗、空 URL、或 `new WebSocket` 同步 throw | 發出 `"error"`；不建立新連線、也不關閉既有連線；store 維持原狀；`connect()` 不 throw。若重連計時器已觸發：`status: "closed"`、`phase: "stopped"`，不再自動重試                                                                                                                                                                |
+```ts
+createWsContext({
+	url: "ws://localhost:8080",
+	reconnectMs: 2000,
+	reconnectBackoff: 1,
+	reconnectJitter: 0,
+	reconnectMinUptimeMs: 0,
+});
+```
 
----
+### 回傳值
 
-### `useWsActions(): WsContextValue`
+| 名稱 | 型別 | 說明 |
+| --- | --- | --- |
+| `WsProvider` | `React.FC<{ children }>` | 持有它所包住子樹的 WebSocket。 |
+| `useWsActions` | `() => WsContextValue` | 連線操作。 |
+| `useWsStore` | `() => WsState` 或 `(selector) => T` | 連線狀態。 |
+| `useWsEvents` | `(type, handler) => void` | WebSocket 事件。 |
 
-必須在對應的 `WsProvider` 內使用。
-回傳的方法引用穩定，**不會**因狀態或訊息更新而重繪元件。
+## `WsProvider`
 
-| 方法         | 簽名                         | 說明                                                                                     |
-| ------------ | ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `send`       | `(data) => boolean`          | 傳送原始資料（`string`、`ArrayBuffer`、`Blob` 等）。已連線則立即送出；否則視佇列設定入隊 |
-| `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`；回傳值同 `send`，無法序列化時為 `false`                  |
-| `connect`    | `() => void`                 | 先取值並 `new WebSocket`；成功後才關閉既有連線。握手失敗見 `WsProvider`                   |
-| `disconnect` | `() => void`                 | 主動斷線；狀態設為 `phase: "idle"`、`status: "closed"`，**不**觸發自動重連；清空待送佇列 |
-| `getStatus`  | `() => WsStatus`             | 讀取當下 `status`（`WsStatus`）；不訂閱、不觸發重繪                                      |
+`WsProvider` 建立原生 `WebSocket`，並在 Provider 卸載時關閉它。
 
-**`send` / `sendJson` 回傳值：**
+| 時機 | 行為 |
+| --- | --- |
+| 掛載且 `autoConnect: true` | 連線。 |
+| 卸載 | 取消重連並歸零重連進度、停止 `liveness`、清空待送佇列。store 變為 `status: "closed"`、`phase: "idle"`。若有 socket 則關閉，並觸發 `close`，reason 為 `"provider unmount"`。 |
+| `disconnect()` | 清理與 store 重置與卸載相同。不自動重連。若有 socket 則觸發 `close`，reason 為 `"client disconnect"`。 |
+| 非主動斷線且 `reconnectMs > 0` | 以退避、上限與抖動等待後重試。`reconnectMax` 大於 `0` 時，超過次數即停止。連線維持滿 `reconnectMinUptimeMs` 才歸零週期。等待中的到期時間在 `nextReconnectAt`。 |
+| `connect()` 時已有 socket | 先建構新 socket。成功後才關閉舊的，並觸發 `close`，reason 為 `"reconnect"`。建構失敗則保留既有 socket。 |
+| 握手失敗 | 發出 `"error"`。不建立新連線，也不關閉既有連線。store 維持原狀。若重連計時器已觸發，store 變為 `status: "closed"`、`phase: "stopped"`，自動重試停止。 |
 
-- `true` — 已送出，或已成功入隊
-- `false` — 未送出：佇列已滿、佇列關閉，或 `sendJson` 無法序列化
+## `useWsActions`
 
----
+`useWsActions(): WsContextValue`
 
-### `useWsStore()`
+在對應的 `WsProvider` 外呼叫時，此 hook 會擲出 `"useWsActions 必須包在對應的 WsProvider 內"`。回傳的方法引用穩定。只呼叫此 hook 的元件不會因 store 或訊息更新而重繪。
 
-必須在對應的 `WsProvider` 內使用。
-以 `useSyncExternalStore` 訂閱連線狀態；**欄位值與上次相同時不會觸發重繪**。
+| 方法 | 簽名 | 說明 |
+| --- | --- | --- |
+| `send` | `(data) => boolean` | 傳送原始資料（`string`、`ArrayBuffer`、`Blob` 等 `WebSocket.send` 可接受的內容）。socket 已開啟則立即送出。否則在待送佇列啟用時入隊。 |
+| `sendJson` | `(data: unknown) => boolean` | `JSON.stringify` 後呼叫 `send`。回傳值同 `send`。無法序列化時回傳 `false`。 |
+| `connect` | `() => void` | 先取值 `url` 與 `protocols`，再建構 socket。成功後才關閉既有 socket。握手失敗見 [`createWsContext`](#createwscontext)。 |
+| `disconnect` | `() => void` | 主動斷線。store 變為 `phase: "idle"`、`status: "closed"`。不自動重連。清空待送佇列。 |
+| `getStatus` | `() => WsStatus` | 讀取當下 `status`，不訂閱，所以呼叫端元件不會重繪。 |
 
-高頻訊息請用 `useWsEvents("message", …)` 訂閱。
+`send` 與 `sendJson` 在已送出或已入隊時回傳 `true`。佇列已滿、佇列關閉，或 `sendJson` 無法序列化時回傳 `false`。
 
-**建議：** 以選取器只訂閱需要的欄位（例如 `(s) => s.phase`）。
-不帶選取器的 `useWsStore()` 會訂閱整份狀態，任一欄位變更都會觸發重繪。
+## `useWsStore`
+
+在對應的 `WsProvider` 外呼叫時，此 hook 會擲出 `"useWsStore 必須包在對應的 WsProvider 內"`。它用 `useSyncExternalStore` 訂閱。選取到的值與上次相同時，它會跳過重繪。
 
 ```ts
 useWsStore(): WsState
 useWsStore<T>(selector: (state: WsState) => T): T
 ```
 
-#### `WsState`
+不帶 selector 的呼叫會訂閱整份 `WsState`，所以 `nextReconnectAt` 一變，只顯示 `status` 的元件也會重繪。帶 selector 則只訂閱選出的值。
 
-| 欄位                 | 型別       | 說明                                                                                                                                                                                                                                                                                         |
-| -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`             | `WsStatus` | 目前的 WebSocket 連線狀態。可能的值見下方 `WsStatus`。                                                                                                                                                                                                                                       |
-| `phase`              | `WsPhase`  | Provider 連線階段。語意與 `status` 分開；可能的值見下方 `WsPhase`。                                                                                                                                                                                          |
-| `reconnectAttempt`   | `number`   | 這次自動重連週期已排程的次數。值為 `n` 代表第 n 次重連已排程或進行中（在意外斷線、決定要重試時增加，不是連上才增加）。連線撐過 `reconnectMinUptimeMs`（預設 5 秒；設 `0` 則一 `open` 就歸零）後歸零。主動 `disconnect()` 立刻歸零。手動 `connect()`：若不是正在等重連，立刻歸零；若正在等重連計時器，要等連上並撐過 `reconnectMinUptimeMs` 才歸零。 |
-| `reconnectExhausted` | `boolean`  | 自動重連已達 `reconnectMax` 且最後一次也失敗。之後的 `connect()`／`disconnect()` 會清回 `false`。                                                                                                                                                                                            |
-| `nextReconnectAt`    | `number`   | 下次自動重連何時到期（`Date.now()` 毫秒）。沒在等重連時為 `0`。倒數用 `nextReconnectAt - Date.now()`；有退避與抖動時，這是唯一能知道還要等多久的值。                                                                                                                                         |
+進來的訊息不在這個 store。訊息從 `useWsEvents("message", ...)` 進來。
 
-`reconnectMax` 等選項在 `createWsContext` 時即固定，**不會**出現在 `WsState`。
-實際連線用的 URL 也不會寫入。
-若 UI 要顯示「第 n 次／最多 m 次」，請在建立 context 時自行記下這些設定值。
+### `WsState`
 
-#### `WsStatus`
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `status` | `WsStatus` | 目前的 WebSocket 連線狀態。 |
+| `phase` | `WsPhase` | Provider 連線階段。語意與 `status` 分開。 |
+| `reconnectAttempt` | `number` | 本輪已排程的自動重連次數。 |
+| `reconnectExhausted` | `boolean` | 自動重連已達 `reconnectMax`，且最後一次也失敗。 |
+| `nextReconnectAt` | `number` | 下次自動重連何時到期，為 `Date.now()` 毫秒。沒在等待時為 `0`。 |
 
-| 值           | 意義                     |
-| ------------ | ------------------------ |
-| `idle`       | 尚未連線（只出現在一開始；斷線後不會回到這個值） |
-| `connecting` | 連線中                   |
-| `open`       | 已連線                   |
-| `closed`     | 已斷線                   |
+`reconnectAttempt` 為 `n` 時，代表第 n 次重連已排程或進行中。它在非主動斷線、決定要重試時增加，不是連上才增加。連線維持開啟滿 `reconnectMinUptimeMs` 後才歸零。預設是 5 秒。該選項為 `0` 時，`open` 即歸零。`disconnect()` 立刻歸零。手動 `connect()` 在不是正在等重連時立刻歸零。若正在等重連計時器，要等連上並維持開啟滿 `reconnectMinUptimeMs` 才歸零。
 
-反映 WebSocket 當下的連線狀態（類似 readyState 映射）。
-`disconnect()` 後為 `status: "closed"`、`phase: "idle"`，`status` 不會回到 `idle`。
-**不含**「是否在自動重連週期」「是否為使用者主動斷線」等 Provider 意圖——請搭配 `phase`。
+之後的 `connect()` 或 `disconnect()` 會把 `reconnectExhausted` 設回 `false`。
 
-#### `WsPhase`
+有退避與抖動時，`nextReconnectAt - Date.now()` 才是這次實際要等的時間。
 
-| 值             | 意義                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `idle`         | 未連線、未排程重連（初始或手動 `disconnect()`）                                                                                                  |
-| `connecting`   | 首次或手動 `connect()` 連線中                                                                                                                    |
-| `open`         | 已連線                                                                                                                                           |
-| `reconnecting` | 自動重連週期（等待計時器或連線中）                                                                                                               |
-| `stopped`      | 不會再自動重連。`reconnectExhausted` 為 `true` 表示已達次數上限；為 `false` 表示沒開重連，或重連計時器到了但握手失敗 |
+`reconnectMax` 等選項在 `createWsContext` 時即固定，不會出現在 `WsState`。實際握手用的 URL 也不會寫入。UI 若要顯示「第 n 次，最多 m 次」，建立 context 時自行保存這些設定值。
 
-`status` 與 `phase` 常同時變化，但語意不同。
-例如 `phase === "reconnecting"` 且 `status === "closed"` 表示正在等待重連計時器；`status === "connecting"` 則表示計時器已觸發、正在嘗試連線。
+### `WsStatus`
 
-**範例：**
+| 值 | 意義 |
+| --- | --- |
+| `idle` | 尚未連線。只出現在初始值。斷線後不會回到這個值。 |
+| `connecting` | 連線中。 |
+| `open` | 已連線。 |
+| `closed` | 已斷線。 |
+
+`status` 對應 WebSocket 當下的連線狀態，類似 `readyState`。`disconnect()` 後為 `status: "closed"`、`phase: "idle"`。`status` 不會回到 `idle`。連線錯誤不是一種 `WsStatus`。錯誤從 `useWsEvents("error")` 進來。原生 `error` 事件後通常緊接 `close`。
+
+`status` 不表示 Provider 是否在自動重連週期，也不表示是否為使用者主動斷線。那些狀態在 `phase`。
+
+### `WsPhase`
+
+| 值 | 意義 |
+| --- | --- |
+| `idle` | 未連線、未排程重連。初始值，或手動 `disconnect()` 之後。 |
+| `connecting` | 首次或手動 `connect()` 進行中。 |
+| `open` | 已連線。 |
+| `reconnecting` | 自動重連週期。正在等計時器，或正在連線。 |
+| `stopped` | 不會再自動重連。 |
+
+`phase` 為 `stopped` 時，若已達次數上限，`reconnectExhausted` 為 `true`。沒開重連，或重連計時器到了但握手失敗時，為 `false`。
+
+`status` 與 `phase` 常同時變化，但語意不同。`phase === "reconnecting"` 且 `status === "closed"` 表示正在等待重連計時器。同一個 `phase` 下 `status === "connecting"` 表示計時器已觸發、正在嘗試連線。
 
 ```tsx
 const phase = useWsStore((s) => s.phase);
 const status = useWsStore((s) => s.status);
 
-// 手動連線：閒置或已停止時才可點
 const canConnect = phase === "idle" || phase === "stopped";
-// 主動斷線：連線中或重連週期內才可點
 const canDisconnect =
-  phase === "open" || phase === "connecting" || phase === "reconnecting";
+	phase === "open" || phase === "connecting" || phase === "reconnecting";
 ```
 
----
+## `useWsEvents`
 
-### `useWsEvents(type, handler)`
+`useWsEvents(type, handler)`
 
-必須在對應的 `WsProvider` 內使用。
-元件掛載時註冊，卸載時自動取消訂閱。
+在對應的 `WsProvider` 外呼叫時，此 hook 會擲出 `"useWsEvents 必須包在對應的 WsProvider 內"`。元件掛載時訂閱，卸載時取消訂閱。
 
-| `type`      | 回呼簽名                                       | 說明                                |
-| ----------- | ---------------------------------------------- | ----------------------------------- |
-| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 為經 `parse` 處理後的結果    |
-| `"open"`    | `(event: Event) => void`                       | 連線建立                            |
-| `"error"`   | `(event: Event) => void`                       | 連線錯誤（原生 socket，或握手失敗） |
-| `"close"`   | `(event: CloseEvent) => void`                  | 連線關閉                            |
+| `type` | 回呼 | 說明 |
+| --- | --- | --- |
+| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 為經 `parse` 處理後的結果。 |
+| `"open"` | `(event: Event) => void` | 連線建立。 |
+| `"error"` | `(event: Event) => void` | socket 或握手錯誤。 |
+| `"close"` | `(event: CloseEvent) => void` | 連線關閉。 |
 
-**行為細節：**
+更新回呼不會重新訂閱。變更 `type` 會重新訂閱。
 
-- 更新回呼**不會**重新訂閱
-- `type` 變更**會**重新訂閱
-- 非預期斷線時，`close` 回呼執行前狀態已更新為 `status: "closed"` 及對應 `phase`
-- 主動 `disconnect()` 或 Provider 卸載亦同：先更新狀態，再觸發 `close` 事件（若當時有 socket）
-- getter 失敗、url 為空字串、或 `new WebSocket` 同步 throw 時發出 `"error"`（`{ type: "error" }`），不觸發 `close`、不替換現有 socket
-- `connect()` 替換既有 socket 時（新 socket 建構成功後）：先觸發 `close`（reason: `"reconnect"`），再將 `status`、`phase` 設為 `"connecting"`
-- 需監聽多種事件時，分別呼叫多次 `useWsEvents`
+非主動斷線時，Provider 會先把 store 寫成 `status: "closed"` 及對應的 `phase`，再執行 `close` 回呼。主動 `disconnect()` 與 Provider 卸載也是這個順序。Provider 先更新 store，當時有 socket 才觸發 `close`。
 
----
+握手失敗會發出 `"error"`，內容為 `{ type: "error" }`，不觸發 `close`，也不替換現有 socket。
 
-### 探活
+`connect()` 在新 socket 建構成功後替換既有 socket 時，先觸發 `close`，reason 為 `"reconnect"`，再將 `status` 與 `phase` 設為 `"connecting"`。
 
-透過 `createWsContext({ liveness: { … } })` 啟用。
-連線建立後週期性送出應用層 ping（直接寫入 socket，非 WebSocket 控制幀，也不經待送佇列）。
-若在 `timeoutMs` 內未收到符合條件的 pong，主動關閉 socket（若已啟用重連則可能接著重連）。
+一次呼叫只訂閱一種 `type`。
 
-`liveness` 選項如下：
+## `liveness`
 
-| 欄位         | 型別                         | 說明                                       |
-| ------------ | ---------------------------- | ------------------------------------------ |
-| `intervalMs` | `number`                     | ping 間隔（毫秒）                          |
-| `timeoutMs`  | `number`                     | 等待 pong 逾時（毫秒）                     |
-| `ping`       | `unknown \| (() => unknown)` | ping 內容；函式則每次動態產生              |
-| `isPong`     | `(data: unknown) => boolean` | 判定傳入 data 是否為 pong                  |
+在 `createWsContext` 設定 `liveness` 即啟用。連線建立後，Provider 會週期送出應用層 ping。它把 ping 直接寫入 socket。ping 不是 WebSocket 控制幀，也不使用待送佇列。若在 `timeoutMs` 內沒有符合條件的 pong，Provider 會關閉 socket。已啟用重連時，這次關閉可能接著重連。
 
-**範例：**
+`LivenessOptions`
+
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| `intervalMs` | `number` | ping 間隔，單位毫秒。 |
+| `timeoutMs` | `number` | 等待 pong 的時間，單位毫秒。 |
+| `ping` | `unknown \| (() => unknown)` | ping 內容。函式則每次呼叫一次。 |
+| `isPong` | `(data: unknown) => boolean` | 判定 parse 後的資料是否為 pong。 |
 
 ```tsx
 createWsContext({
-  url: "ws://localhost:8080",
-  reconnectMs: 3000,
-  liveness: {
-    intervalMs: 30_000,
-    timeoutMs: 10_000,
-    ping: { type: "ping" },
-    isPong: (data) =>
-      typeof data === "object" &&
-      data != null &&
-      (data as { type?: string }).type === "pong",
-  },
+	url: "ws://localhost:8080",
+	reconnectMs: 3000,
+	liveness: {
+		intervalMs: 30_000,
+		timeoutMs: 10_000,
+		ping: { type: "ping" },
+		isPong: (data) =>
+			typeof data === "object" &&
+			data != null &&
+			(data as { type?: string }).type === "pong",
+	},
 });
 ```
 
-探活期間，收到的每一筆訊息都會先經 `isPong` 判定；若為 pong 則清除逾時計時，並照常觸發 `"message"` 事件。
-ping 內容一律以 `JSON.stringify` 送出（僅支援 JSON 格式）。
+每一筆進來的訊息都會先經 `isPong` 判定。若為 pong 則清除逾時計時，並照常觸發 `"message"`。Provider 用 `JSON.stringify` 送出 ping，所以 ping 本體必須可轉成 JSON。
 
----
-
-### 待送佇列
+## 待送佇列
 
 當 `outgoingQueueMax > 0` 時：
 
-| 時機                    | 行為                                                    |
-| ----------------------- | ------------------------------------------------------- |
-| `send` 且 socket 未連線 | 訊息入隊（先進先出）                                    |
-| 佇列已滿                | 回傳 `false`，**不**丟棄舊訊息                          |
-| 連線成功（`open`）      | 依序送出全部佇列                                        |
-| `disconnect()`          | 清空佇列；狀態重置見 `WsProvider`                       |
-| `WsProvider` 卸載       | 清空佇列；狀態重置見 `WsProvider`                       |
-| 自動重連等待期間        | **保留**佇列                                            |
+| 時機 | 行為 |
+| --- | --- |
+| `send` 且尚未連線 | 訊息入隊，先進先出。 |
+| 佇列已滿 | 回傳 `false`。不丟棄舊訊息。 |
+| `open` | 依序送出全部佇列。 |
+| `disconnect()` | 清空佇列。store 重置與 `WsProvider` 相同。 |
+| `WsProvider` 卸載 | 清空佇列。store 重置與 `WsProvider` 相同。 |
+| 自動重連等待期間 | 保留佇列。 |
 
----
-
-### 匯出型別
+## 匯出型別
 
 自 `react-ws-context` 主入口匯出：
 
-| 型別                     | 說明                                                |
-| ------------------------ | --------------------------------------------------- |
-| `CreateWsContextOptions` | `createWsContext` 的選項                            |
-| `MaybeGetter<T>`         | `T \| (() => T)` — 靜態值或同步 getter              |
-| `LivenessOptions`        | `createWsContext` 的 `liveness` 選項                |
-| `WsContextValue`         | `useWsActions()` 回傳型別                           |
-| `WsEvents`               | 事件名稱與回呼的型別對應                            |
-| `WsStatus`               | WebSocket 連線狀態（`WsState` 的一環）              |
-| `WsPhase`                | 連線階段                                            |
-| `WsState`                | 可訂閱的連線狀態                                    |
-
----
+| 型別 | 說明 |
+| --- | --- |
+| `CreateWsContextOptions` | `createWsContext` 的選項。 |
+| `MaybeGetter<T>` | `T \| (() => T)`。靜態值或同步 getter。 |
+| `LivenessOptions` | `createWsContext` 的 `liveness` 選項。 |
+| `WsContextValue` | `useWsActions()` 的回傳型別。 |
+| `WsEvents` | 事件名稱與回呼的對應。 |
+| `WsStatus` | WebSocket 連線狀態。`WsState` 的欄位。 |
+| `WsPhase` | 連線階段。 |
+| `WsState` | 可訂閱的連線狀態。 |
 
 ## 授權
 
 本套件以 [MIT License](./LICENSE) 釋出。Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang)。
 
----
-
 ## 借鑑與致謝
 
-本套件**未**將下列專案列為 npm 依賴；為達成零執行期依賴，僅內嵌本套件所需的精簡子集。
-各原始碼檔案頂部亦附有出處備註。
+本套件未將 zustand 或 nanoevents 列為 npm 依賴。它只內嵌用到的子集。各原始碼檔案頂部亦附有出處備註。
 
-### [zustand](https://github.com/pmndrs/zustand)
+[zustand](https://github.com/pmndrs/zustand) 為 MIT 授權，由 [pmndrs](https://github.com/pmndrs)（Poimandres）維護。外部 store API 對齊 [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts)，不含 middleware、replace、initializer factory。`setState` 在欄位值未變時不通知訂閱者。React 訂閱對齊 [`react.ts`](https://github.com/pmndrs/zustand/blob/main/src/react.ts) 的 `useStore`，不含 `useDebugValue`。本套件為 `useWsStore` 加上可選的 selector overload。程式在 `src/ws-context/store.ts`、`src/ws-context/use-store.ts`。
 
-- **作者／維護：** [pmndrs](https://github.com/pmndrs)（Poimandres）
-- **授權：** [MIT](https://github.com/pmndrs/zustand/blob/main/LICENSE)
-- **借鑑範圍：**
-  - 外部 store（`getState` / `setState` / `subscribe` / `getInitialState`）— 靈感與行為對齊 [`vanilla.ts`](https://github.com/pmndrs/zustand/blob/main/src/vanilla.ts)，非完整搬移（無 middleware、replace、initializer factory）；`setState` 在欄位值未變時不通知訂閱者
-  - React 訂閱 hook — 靈感來自 [`react.ts`](https://github.com/pmndrs/zustand/blob/main/src/react.ts) 的 `useStore`（無 `useDebugValue`）；本套件為 `useWsStore` 加上可選 selector overload
-- **對應原始碼：** `src/ws-context/store.ts`、`src/ws-context/use-store.ts`
-
-### [nanoevents](https://github.com/ai/nanoevents)
-
-- **作者：** [Andrey Sitnik](https://github.com/ai)（`ai`）
-- **授權：** [MIT](https://github.com/ai/nanoevents/blob/main/LICENSE)
-- **借鑑範圍：**
-  - 型別化事件派發 — 執行期邏輯幾乎對齊 [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js)；型別為本套件收斂版
-  - React 訂閱包裝 — 本套件自行新增
-- **對應原始碼：** `src/ws-context/emitter.ts`、`src/ws-context/ws-events.ts`
+[nanoevents](https://github.com/ai/nanoevents) 為 MIT 授權，作者是 [Andrey Sitnik](https://github.com/ai)（`ai`）。型別化事件派發的執行期對齊 [`createNanoEvents`](https://github.com/ai/nanoevents/blob/main/index.js)。型別為本套件的子集。React 訂閱包裝由本套件新增。程式在 `src/ws-context/emitter.ts`、`src/ws-context/ws-events.ts`。
