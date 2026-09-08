@@ -31,7 +31,10 @@ pnpm typecheck        # Typecheck entire workspace
 pnpm test             # packages/react-ws smoke tests
 ```
 
-The demo connects to `ws://localhost:8080` — run `dev:mock` and `dev` in separate terminals. `react-ws-context` is consumed via `workspace:*` from compiled `dist/`; `pnpm dev` runs `tsdown --watch` and Next.js in parallel, so package source changes rebuild on save. If you run only `pnpm --filter @react-ws/web dev` (without the package watch), run `pnpm build:pkg` first.
+The demo connects to `ws://localhost:8080` — run `dev:mock` and `dev` in separate terminals.
+`react-ws-context` is consumed via `workspace:*` from compiled `dist/`.
+`pnpm dev` runs `tsdown --watch` and Next.js in parallel, so package source changes rebuild on save.
+If you run only `pnpm --filter @react-ws/web dev` (without the package watch), run `pnpm build:pkg` first.
 
 ### Add a dependency to a workspace package
 
@@ -67,7 +70,8 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 `url` / `protocols` may also be sync getters, resolved at the start of each `connect()`.
 
-Reconnect is off until `reconnectMs > 0`; once on, retries back off and jitter by default (2s, 4s, 8s… capped at 30s). Pass `reconnectBackoff: 1` for a fixed interval.
+Reconnect is off by default; set `reconnectMs` to retry with exponential backoff and jitter.
+For a fixed wait that also resets on `open`, pass `reconnectBackoff: 1`, `reconnectJitter: 0`, and `reconnectMinUptimeMs: 0`.
 
 ## License
 

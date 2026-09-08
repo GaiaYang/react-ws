@@ -7,7 +7,7 @@
 
 React WebSocket **連線層** monorepo。可發佈套件：**`react-ws-context`**（目錄 `packages/react-ws`）。
 
-> 維護者：[GaiaYang](https://github.com/GaiaYang) · 原始碼：<https://github.com/GaiaYang/react-ws>
+> **維護者：** [GaiaYang](https://github.com/GaiaYang) · **原始碼：** [github.com/GaiaYang/react-ws](https://github.com/GaiaYang/react-ws)
 
 ## 目錄結構
 
@@ -31,7 +31,10 @@ pnpm typecheck        # 全 workspace 型別檢查
 pnpm test             # packages/react-ws smoke tests
 ```
 
-Demo 連線 `ws://localhost:8080`，需同時跑 `dev:mock` 與 `dev`（兩個終端）。`react-ws-context` 透過 `workspace:*` 讀取編譯後的 `dist/`；`pnpm dev` 會平行跑 `tsdown --watch` 與 Next.js，改套件原始碼時存檔即會重編譯。若只跑 `pnpm --filter @react-ws/web dev`（不含套件 watch），需先 `pnpm build:pkg`。
+Demo 連線 `ws://localhost:8080`，需同時跑 `dev:mock` 與 `dev`（兩個終端）。
+`react-ws-context` 透過 `workspace:*` 讀取編譯後的 `dist/`。
+`pnpm dev` 會平行跑 `tsdown --watch` 與 Next.js，改套件原始碼時存檔即會重編譯。
+若只跑 `pnpm --filter @react-ws/web dev`（不含套件 watch），需先 `pnpm build:pkg`。
 
 ### 為子專案加依賴
 
@@ -67,7 +70,8 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 `url`／`protocols` 也可為同步 getter，每次 `connect()` 開頭取值。
 
-重連要 `reconnectMs > 0` 才啟用；啟用後預設會指數退避並隨機錯開（2s、4s、8s…上限 30s），要固定間隔請加 `reconnectBackoff: 1`。
+重連預設關閉；設 `reconnectMs` 後才會重試，並帶指數退避與隨機抖動。
+要每次等同一個間隔、且 `open` 即歸零，請加 `reconnectBackoff: 1`、`reconnectJitter: 0`、`reconnectMinUptimeMs: 0`。
 
 ## 授權
 

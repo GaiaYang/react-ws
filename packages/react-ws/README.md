@@ -17,7 +17,7 @@ It separates connection lifecycle, subscribable state, and message events so con
 - **Frozen strategy** — the `url` / `protocols` getter (or static value) and other options are fixed at `createWsContext`; each handshake resolves getters.
   Those options cannot be changed later; use `connect` / `disconnect` to control the connection
 - **Render isolation** — connection state is subscribed via `useWsStore`; messages via `useWsEvents` (not written into React state)
-- **Opt-in reconnect** — off until `reconnectMs > 0`; then exponential backoff with jitter, a delay cap, and an optional attempt cap
+- **Optional reconnect** — off by default; set `reconnectMs` to retry with exponential backoff and jitter
 - **Optional liveness** — periodic ping / pong; closes the socket on timeout (may trigger reconnect if enabled)
 - **Optional outbound queue** — buffers messages while not connected; sends the queue in order on connect
 
@@ -30,6 +30,7 @@ It separates connection lifecycle, subscribable state, and message events so con
 
 The connection layer does not use `window` or DOM `Event` / `CloseEvent` constructors.
 Call `createWsContext` and its hooks where `WebSocket` is available.
+Without `WebSocket` (for example SSR), `connect()` is a no-op.
 
 The package entry is marked `"use client"` so it can be imported in Next.js App Router and similar setups.
 A SPA ignores the directive.
@@ -58,11 +59,9 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
   });
 ```
 
-`url` / `protocols` may be a static value or a **sync getter** (`MaybeGetter<T>`).
-It runs synchronously at the start of each `connect()`.
+`url` / `protocols` may be a static value or a **sync getter** (`MaybeGetter<T>`), resolved at the start of each `connect()`.
 Do not `await` or call hooks inside it.
-You provide the source (e.g. `localStorage`).
-This package does not handle auth.
+The app provides the source (e.g. `localStorage`); this package does not handle auth.
 To replace the getter or switch back to a static string, call `createWsContext` again.
 
 ```tsx
@@ -119,13 +118,12 @@ createWsContext(options)
         │
         ├── WsProvider      WebSocket instance, reconnect, liveness, outbound queue
         ├── useWsActions()  send / connect / disconnect / getStatus — no re-renders
-        ├── useWsStore()    connection-necessary state
+        ├── useWsStore()    connection state
         └── useWsEvents()   open / message / error / close
 ```
 
 - **Call `createWsContext` multiple times** for independent connections (e.g. app WS + notification WS).
   Each call returns its own Provider and hooks.
-- **`WsState` holds connection-necessary state only** — low-frequency; subscribe with `useWsStore`.
 - **Messages and errors** — use `useWsEvents`; keep message history in your own React state, cache, or state library.
 - **Connection errors are not a `WsStatus`** — use `useWsEvents("error")`; native `error` is usually followed by `close`.
 
@@ -146,7 +144,7 @@ Creates a `WsProvider` and hooks bound to the same connection config.
 | `autoConnect`          | `boolean`                                 | `true`     | Auto-connect when `WsProvider` loads                                                                                                    |
 | `reconnectMs`          | `number`                                  | `0`        | Base reconnect delay (ms) after unintentional close, i.e. the first retry; `0` disables reconnect                                       |
 | `reconnectMax`         | `number`                                  | `0`        | Max auto-reconnects after unintentional close; `0` unlimited (requires `reconnectMs > 0`)                                               |
-| `reconnectBackoff`     | `number`                                  | `2`        | How much the wait grows each attempt. Default `2` doubles it (1s → 2s → 4s…); `1` keeps a fixed interval; below `1` is clamped to `1`  |
+| `reconnectBackoff`     | `number`                                  | `2`        | How much the wait grows each attempt. Default `2` doubles it (1s → 2s → 4s…); `1` does not grow the wait; below `1` is clamped to `1` |
 | `reconnectDelayMaxMs`  | `number`                                  | `30000`    | Hard cap (ms) for a single delay, jitter included; `0` uncapped                                                                         |
 | `reconnectJitter`      | `number`                                  | `0.2`      | How much to randomize each wait, in `[0, 1]`. Default `0.2` waits 80%–100% of the scheduled delay; `1` is full jitter; `0` disables jitter         |
 | `reconnectMinUptimeMs` | `number`                                  | `5000`     | How long a connection must stay open (ms) before the reconnect cycle resets; `0` resets on `open`                                       |
@@ -170,7 +168,7 @@ createWsContext({ url: "ws://localhost:8080", reconnectMs: 1000 });
 `reconnectMinUptimeMs` is what makes backoff effective.
 If the server accepts a connection and closes it right away (flapping), `0` resets the cycle on every `open`, so backoff and `reconnectMax` never move past the first step.
 
-To restore a fixed interval (the pre-0.6 behavior):
+To use a fixed interval with no jitter, and reset the reconnect cycle on `open`:
 
 ```ts
 createWsContext({
@@ -188,7 +186,7 @@ createWsContext({
 | -------------- | ------------------------------------ | -------------------------------------------- |
 | `WsProvider`   | `React.FC<{ children }>`             | Wraps the subtree that needs this connection |
 | `useWsActions` | `() => WsContextValue`               | Connection actions                           |
-| `useWsStore`   | `() => WsState` or `(selector) => T` | Subscribe to connection-necessary state      |
+| `useWsStore`   | `() => WsState` or `(selector) => T` | Subscribe to connection state                |
 | `useWsEvents`  | `(type, handler) => void`            | Subscribe to WebSocket events                |
 
 ---
@@ -219,7 +217,7 @@ Returned actions keep a stable reference and **do not** re-render on store or me
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`; same return semantics as `send`; `false` if not serializable                                       |
 | `connect`    | `() => void`                 | Resolve `url` / `protocols` and construct the socket; on success, close any existing socket. Handshake failure: see `WsProvider` |
 | `disconnect` | `() => void`                 | Intentional close; sets store to `phase: "idle"`, `status: "closed"`; no auto-reconnect; clears outbound queue                   |
-| `getStatus`  | `() => WsStatus`             | Read current status; no subscription, no re-render                                                                               |
+| `getStatus`  | `() => WsStatus`             | Read current `status` (`WsStatus`); no subscription, no re-render                                                                |
 
 **`send` / `sendJson` return value:**
 
@@ -233,7 +231,6 @@ Returned actions keep a stable reference and **do not** re-render on store or me
 Must be used inside the matching `WsProvider`.
 Subscribes via `useSyncExternalStore`; **re-renders are skipped when field values are unchanged**.
 
-`WsState` is connection-necessary state — low-frequency updates.
 For high-frequency messages, use `useWsEvents("message", …)`.
 
 **Tip:** use a selector to subscribe only to the fields you need (e.g. `(s) => s.phase`).
@@ -249,7 +246,7 @@ useWsStore<T>(selector: (state: WsState) => T): T
 | Field                | Type       | Description                                                                                                                                                                                                                                                                                                                                 |
 | -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `status`             | `WsStatus` | Current WebSocket connection state. See `WsStatus` below.                                                                                                                                                                                                                                                                                   |
-| `phase`              | `WsPhase`  | Whether the provider is connecting, auto-reconnecting, or has given up. Separate from `status`; see `WsPhase` below.                                                                                                                                                                                                                        |
+| `phase`              | `WsPhase`  | Provider connection phase. Separate from `status`; see `WsPhase` below.                                                                                                                                                                                                     |
 | `reconnectAttempt`   | `number`   | How many auto-reconnects have been scheduled in the current cycle. A value of `n` means the nth reconnect is scheduled or in progress (increments when an unintentional close queues a retry, not when the retry succeeds). Resets after the connection has stayed open for `reconnectMinUptimeMs` (default 5s; `0` resets on `open`). `disconnect()` resets immediately. A manual `connect()` resets immediately unless a reconnect timer is already waiting; then it resets once that connection survives `reconnectMinUptimeMs`. |
 | `reconnectExhausted` | `boolean`  | Auto-reconnect hit `reconnectMax` and the last attempt also failed. Cleared back to `false` by a later `connect()` / `disconnect()`.                                                                                                                                                                                                        |
 | `nextReconnectAt`    | `number`   | When the next auto-reconnect is due (`Date.now()` milliseconds). `0` while not waiting. Use `nextReconnectAt - Date.now()` for a countdown — with backoff and jitter, this is the only way to know how long the current wait is.                                                                                                            |
@@ -318,7 +315,7 @@ Subscribes on mount and unsubscribes on unmount.
 - On unintentional disconnect, the store is updated to `status: "closed"` and the appropriate `phase` before your `close` handler runs
 - Intentional `disconnect()` or provider unmount follows the same order: store first, then `close` fires (when a socket exists)
 - If the getter throws, the URL is empty, or `new WebSocket` throws, emits `"error"` (`{ type: "error" }`) without `close` and without replacing an existing socket
-- When `connect()` replaces an existing socket (after a successful construct), `close` fires on the previous socket (reason: `"reconnect"`), then `status` and `phase` become `"connecting"`
+- When `connect()` replaces an existing socket (after a successful construct): `close` fires first (reason: `"reconnect"`), then `status` and `phase` become `"connecting"`
 - For multiple events, call `useWsEvents` multiple times
 
 ---
@@ -326,19 +323,17 @@ Subscribes on mount and unsubscribes on unmount.
 ### Liveness
 
 Enable via `createWsContext({ liveness: { … } })`.
-Once connected, sends periodic application-layer pings (JSON written directly to the socket — not WebSocket control frames, and not through the outbound queue).
+Once connected, sends periodic application-layer pings (written directly to the socket — not WebSocket control frames, and not through the outbound queue).
 If no matching pong arrives within `timeoutMs`, closes the socket (which may trigger reconnect if enabled).
 
 The `liveness` option:
 
-```ts
-interface LivenessOptions {
-  intervalMs: number; // ping interval (ms)
-  timeoutMs: number; // wait for pong (ms)
-  ping: unknown | (() => unknown); // ping payload; function for dynamic values
-  isPong: (data: unknown) => boolean; // whether parsed data is a pong
-}
-```
+| Field        | Type                         | Description                                          |
+| ------------ | ---------------------------- | ---------------------------------------------------- |
+| `intervalMs` | `number`                     | Ping interval (ms)                                   |
+| `timeoutMs`  | `number`                     | Wait for pong (ms)                                   |
+| `ping`       | `unknown \| (() => unknown)` | Ping payload; function for dynamic values            |
+| `isPong`     | `(data: unknown) => boolean` | Whether parsed data is a pong                        |
 
 **Example:**
 
@@ -371,7 +366,7 @@ When `outgoingQueueMax > 0`:
 | -------------------------- | ----------------------------------------------------- |
 | `send` while not connected | Enqueue (first in, first out)                         |
 | Queue full                 | Returns `false`; does **not** drop older messages     |
-| Socket connected           | Sends the entire queue in order                       |
+| On `open`                  | Sends the entire queue in order                       |
 | `disconnect()`             | Clear queue; store reset matches `WsProvider`         |
 | `WsProvider` unmount       | Clear queue; store reset matches `WsProvider`         |
 | Waiting for auto-reconnect | **Keep** queue                                        |
@@ -390,22 +385,8 @@ From the main `react-ws-context` entry:
 | `WsContextValue`         | Return type of `useWsActions()`                          |
 | `WsEvents`               | Event name → handler map                                 |
 | `WsStatus`               | WebSocket connection state (`WsState`)                   |
-| `WsPhase`                | Provider connection intent / reconnect phase (`WsState`) |
+| `WsPhase`                | Connection phase                                         |
 | `WsState`                | Subscribable connection state                        |
-
----
-
-## Design trade-offs
-
-| Topic           | Notes                                                                                                                                                                                                       |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Frozen strategy | Getter functions / static values are fixed at create time; getters re-resolve on each handshake. To change how URL / protocols are built, call `createWsContext` again                                      |
-| Reconnect       | Exponential backoff with downward jitter by default (`reconnectBackoff`, `reconnectDelayMaxMs`, `reconnectJitter`); set `reconnectBackoff: 1` for a fixed interval; optional attempt cap via `reconnectMax` |
-| SSR             | No `WebSocket` on the server; `connect()` is a no-op when `WebSocket` is missing                                                                                                                            |
-| Error status    | No `"error"` in `WsStatus`; use `useWsEvents("error")`                                                                                                                                                      |
-| `WsState` scope | Connection-necessary state only                                                                                                                                                                     |
-| Rendering       | Components that only call `useWsActions` do not re-render on store or messages                                                                                                                              |
-| Store updates   | Unchanged field values skip re-renders; prefer selectors for the fields you need                                                                                                                            |
 
 ---
 
