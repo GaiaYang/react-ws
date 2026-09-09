@@ -5,10 +5,8 @@ import { useStore } from "./use-store";
 /**
  * 連線生命週期狀態（`WsState` 的一環）。
  *
- * - `idle` — 尚未連線（僅初始 store；之後斷線為 `closed`）
- * - `connecting` — 連線中
- * - `open` — 已連線
- * - `closed` — 已斷線
+ * - `idle` — 僅初始 store；之後斷線為 `closed`（`disconnect()` 不會回到 `idle`）
+ * - `connecting`／`open`／`closed` — 對應 WebSocket 當下狀態
  *
  * 錯誤用 `useWsEvents("error")`；不另設 error status。
  */
@@ -17,7 +15,7 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
 /**
  * Provider 連線意圖與重連策略階段（`WsState` 的一環）。
  *
- * 與 `status` 分開：`status` 是 WebSocket 當下連線狀態；`phase` 補足「是否在重連／是否已放棄」等意圖。
+ * 與 `status` 分開：`status` 是 WebSocket 當下連線狀態；`phase` 補足「是否在重連／是否已放棄」。
  *
  * - `idle` — 未連線、未排程重連（初始或手動 `disconnect()`）
  * - `connecting` — 首次或手動 `connect()` 連線中
@@ -31,11 +29,8 @@ export type WsPhase =
 /**
  * 可訂閱的連線層 state（低頻更新）。
  *
- * 只放：**連線健康**、**重連** 等連線生命週期資訊。
- *
- * 不放：訊息 payload、訊息歷史、業務資料（請用 `useWsEvents` 或自行管理 state）。
- *
- * 欄位限原始值（字串／數字／布林），不放物件或陣列。
+ * 只放連線健康與重連等生命週期資訊；不放訊息 payload／歷史／業務資料
+ * （請用 `useWsEvents` 或自行管理）。欄位限原始值，不放物件或陣列。
  */
 export type WsState = {
   /** 連線生命週期狀態 */
@@ -57,14 +52,13 @@ export type WsState = {
   /**
    * 本輪自動重連已達 `reconnectMax` 且最後一次也失敗。
    *
-   * 手動 `connect()` 或 `disconnect()` 設定為 `false`
+   * 手動 `connect()` 或 `disconnect()` 設定為 `false`。
    */
   reconnectExhausted: boolean;
   /**
    * 下次自動重連的預定時間（`Date.now()` 時間軸的毫秒數）。
    *
-   * 未在等待重連時為 `0`。等待中可用 `nextReconnectAt - Date.now()` 做倒數；
-   * 因為等待時間有退避與隨機抖動，這個值是唯一能得知本次要等多久的來源。
+   * 未在等待重連時為 `0`。因為等待有退避與隨機抖動，這是唯一能得知本次要等多久的來源。
    */
   nextReconnectAt: number;
 };
@@ -88,7 +82,6 @@ export function createWsStoreContext() {
   return createContext<WsStoreApi | null>(null);
 }
 
-/** 每個 `WsProvider` 各有一份 {@link WsState} store */
 export function useWsStoreApi(): WsStoreApi {
   const [store] = useState(() => createWsStore());
   return store;

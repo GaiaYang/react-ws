@@ -2,11 +2,8 @@ import { resolvePingPayload } from "./resolve-ping";
 import type { LivenessOptions } from "./types";
 
 export interface LivenessController {
-  /** 開始探活 */
   start: (sendPing: () => void) => void;
-  /** 停止探活 */
   stop: () => void;
-  /** 收到訊息 */
   onMessage: (data: unknown) => void;
 }
 
@@ -40,7 +37,8 @@ export function createLivenessController(
   return {
     start(sendPing) {
       sendPingRef = sendPing;
-      tick(); // setInterval 不會立刻跑，否則要等滿一個 interval 才有第一次 ping
+      // setInterval 不會立刻跑；否則要等滿一個 interval 才有第一次 ping
+      tick();
       intervalId = setInterval(tick, intervalMs);
     },
 

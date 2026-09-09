@@ -7,11 +7,9 @@ import {
 import type { LivenessOptions } from "./types";
 
 export interface Liveness {
-  /** 開始探活；socket 取自此次 `start` 當下的 `getActiveSocket` */
+  /** socket 取自此次 `start` 當下的 `getActiveSocket`（逾時計時綁定該線） */
   start: () => void;
-  /** 停止探活 */
   stop: () => void;
-  /** 收到訊息 */
   onMessage: (data: unknown) => void;
 }
 

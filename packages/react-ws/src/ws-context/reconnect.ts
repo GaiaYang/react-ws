@@ -53,13 +53,9 @@ export function reconnectDelay(
 }
 
 export interface ReconnectCallbacks {
-  /** 讀取 store 的 `reconnectAttempt` */
   getAttempt: () => number;
-  /** 寫入 store 的 `reconnectAttempt` */
   setAttempt: (attempt: number) => void;
-  /** 寫入 store 的 `reconnectExhausted` */
   setExhausted: (exhausted: boolean) => void;
-  /** 寫入 store 的 `nextReconnectAt`；非等待中為 `0` */
   setNextAt: (at: number) => void;
 }
 
@@ -76,7 +72,7 @@ export interface Reconnect {
    * `reconnectMinUptimeMs > 0` 時改為排一個計時器，連線撐滿該時間才歸零。
    */
   onOpen: () => void;
-  /** 意外斷線後嘗試重連；有排重連回 `true` */
+  /** 意外斷線後嘗試重連；有排程則回 `true` */
   scheduleAfterClose: () => boolean;
   /**
    * 重連計時器已觸發、但本次 connect 未能開線時呼叫。
@@ -88,7 +84,6 @@ export interface Reconnect {
   clearTimerTrigger: () => boolean;
   /** 主動斷線或元件卸載：取消計時器並歸零本輪計數 */
   cancel: () => void;
-  /** 設定重連時要執行的 connect */
   bindOnReconnect: (fn: () => void) => void;
 }
 
@@ -99,7 +94,7 @@ export function createReconnect(
   let intentionalClose = false;
   let fromTimer = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  /** minUptime 計時器：連線撐滿才歸零本輪計數，撐不滿就會被清掉 */
+  /** minUptime：連線撐滿才歸零本輪計數；撐不滿會在斷線時清掉 */
   let uptimeTimer: ReturnType<typeof setTimeout> | null = null;
   let onReconnect = () => {};
 
@@ -122,7 +117,7 @@ export function createReconnect(
     callbacks.setExhausted(false);
   };
 
-  /** 只在等待重連時有值；自行記著上次寫的值，避免無變化也去動 store */
+  /** 自行記著上次寫入的值，避免無變化也去動 store */
   let nextAt = 0;
   const setNextAt = (at: number) => {
     if (nextAt === at) return;
@@ -148,7 +143,6 @@ export function createReconnect(
         resetCycle();
         return;
       }
-      // 上一輪的計時器已由 onConnectBegin 清掉，這裡直接接手
       uptimeTimer = setTimeout(
         () => {
           uptimeTimer = null;

@@ -15,7 +15,6 @@ export function createWsEventsContext() {
   return createContext<WsEventsEmitter | null>(null);
 }
 
-/** 每個 `WsProvider` 各有一份 event emitter */
 export function useWsEventsApi(): WsEventsEmitter {
   const [emitter] = useState(() => createEmitter<WsEvents>());
   return emitter;
