@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-09
+
 ### Changed
 
+- README: npm package `README.md` is now a short entry page; full English docs live in `README.en.md`, Traditional Chinese in `README.zh-TW.md`
 - README (EN / zh-TW): restructure as a user-facing library README (positioning, why the split, quick start, how it works, layered configuration, API reference, then reconnect / liveness / outgoing queue)
 - README (EN / zh-TW): clarify hook usage paths, `status` / `phase`, and handshake failure after a fired reconnect timer against the connection layer
+- Public API JSDoc: tighten wording while keeping design constraints and field titles for IDE consumers
 
 ## [0.6.1] - 2026-09-07
 
