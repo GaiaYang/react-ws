@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
 [![npm downloads](https://img.shields.io/npm/dm/react-ws-context.svg)](https://www.npmjs.com/package/react-ws-context)
 
-> [English](./README.md)
+> [English](./README.en.md)
 
 `react-ws-context` 是給 React 用的 WebSocket 連線層，將連線生命週期、連線狀態與 WebSocket 事件分開管理。適合需要重連、liveness 與 outgoing queue 等連線層機制，同時不希望 WebSocket 訊息流量直接進入 React state 的應用。
 

@@ -56,7 +56,7 @@ pnpm add react-ws-context react
 # or: yarn add react-ws-context react
 ```
 
-API, options, and hook behavior are in [`packages/react-ws/README.md`](./packages/react-ws/README.md) (English), [the Traditional Chinese README](./packages/react-ws/README.zh-TW.md), and the [Changelog](./packages/react-ws/CHANGELOG.md).
+API, options, and hook behavior are in [`packages/react-ws/README.en.md`](./packages/react-ws/README.en.md) (English), [the Traditional Chinese README](./packages/react-ws/README.zh-TW.md), and the [Changelog](./packages/react-ws/CHANGELOG.md).
 
 ```tsx
 "use client";
@@ -74,4 +74,4 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 ## License
 
-[MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments for zustand and nanoevents are in [`packages/react-ws/README.md#acknowledgments`](./packages/react-ws/README.md#acknowledgments).
+[MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments for zustand and nanoevents are in [`packages/react-ws/README.en.md#acknowledgments`](./packages/react-ws/README.en.md#acknowledgments).

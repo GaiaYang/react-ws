@@ -18,7 +18,7 @@
     "url": "git+https://github.com/GaiaYang/react-ws.git",
     "directory": "packages/react-ws"
   },
-  "homepage": "https://github.com/GaiaYang/react-ws/tree/main/packages/react-ws#readme",
+  "homepage": "https://github.com/GaiaYang/react-ws/tree/main/packages/react-ws",
   "bugs": {
     "url": "https://github.com/GaiaYang/react-ws/issues"
   },
@@ -36,6 +36,7 @@
   "files": [
     "dist",
     "README.md",
+    "README.en.md",
     "README.zh-TW.md",
     "LICENSE",
     "CHANGELOG.md"

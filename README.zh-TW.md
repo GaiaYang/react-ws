@@ -56,7 +56,7 @@ pnpm add react-ws-context react
 # or: yarn add react-ws-context react
 ```
 
-API、選項與 hook 行為見 [`packages/react-ws/README.zh-TW.md`](./packages/react-ws/README.zh-TW.md)（繁中）、[English README](./packages/react-ws/README.md)、[Changelog](./packages/react-ws/CHANGELOG.md)。
+API、選項與 hook 行為見 [`packages/react-ws/README.zh-TW.md`](./packages/react-ws/README.zh-TW.md)（繁中）、[English README](./packages/react-ws/README.en.md)、[Changelog](./packages/react-ws/CHANGELOG.md)。
 
 ```tsx
 "use client";
