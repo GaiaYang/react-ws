@@ -78,23 +78,18 @@ describe("liveness", () => {
       close: closeB,
       send: vi.fn(),
     } as unknown as WebSocket;
-    let active: WebSocket | null = a;
+    const session = createLiveness({
+      intervalMs: 100,
+      timeoutMs: 50,
+      ping: { type: "PING" },
+      isPong: () => false,
+    });
 
-    const session = createLiveness(
-      {
-        intervalMs: 100,
-        timeoutMs: 50,
-        ping: { type: "PING" },
-        isPong: () => false,
-      },
-      () => active,
-    );
-
-    session.start();
-    active = b;
+    session.start(a);
+    session.start(b);
     vi.advanceTimersByTime(50);
-    expect(closeA).toHaveBeenCalledTimes(1);
-    expect(closeB).not.toHaveBeenCalled();
+    expect(closeA).not.toHaveBeenCalled();
+    expect(closeB).toHaveBeenCalledTimes(1);
     session.stop();
   });
 
@@ -102,19 +97,15 @@ describe("liveness", () => {
     vi.useFakeTimers();
     const close = vi.fn();
     const ws = { readyState: 1, close, send: vi.fn() } as unknown as WebSocket;
-    const active: WebSocket | null = ws;
 
-    const session = createLiveness(
-      {
-        intervalMs: 100,
-        timeoutMs: 50,
-        ping: { type: "PING" },
-        isPong: () => false,
-      },
-      () => active,
-    );
+    const session = createLiveness({
+      intervalMs: 100,
+      timeoutMs: 50,
+      ping: { type: "PING" },
+      isPong: () => false,
+    });
 
-    session.start();
+    session.start(ws);
     vi.advanceTimersByTime(50);
     expect(close).toHaveBeenCalledTimes(1);
     session.stop();

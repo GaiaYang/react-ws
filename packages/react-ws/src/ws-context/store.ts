@@ -1,5 +1,5 @@
-// 精簡外部 store：只保留本套件需要的 getState / setState / subscribe / getInitialState。
-// 靈感與行為對齊 zustand/vanilla（非完整搬移；無 middleware、無 replace、無 initializer factory）。
+// 只保留本套件需要的 getState / setState / subscribe / getInitialState。
+// 對齊 zustand/vanilla 的子集（無 middleware、無 replace、無 initializer factory）。
 // Project: zustand — https://github.com/pmndrs/zustand
 // Author: pmndrs (Poimandres) — https://github.com/pmndrs
 // License: MIT — https://github.com/pmndrs/zustand/blob/main/LICENSE

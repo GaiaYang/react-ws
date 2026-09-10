@@ -7,11 +7,7 @@ export function detachAndClose(ws: WebSocket): void {
   if (ws.readyState < WebSocket.CLOSING) ws.close();
 }
 
-/**
- * 原生 `onclose` 已被卸掉，需自行發事件。
- *
- * 使用 CloseEvent 形狀的 plain object（不呼叫 DOM 建構子）；`reason` 區分 disconnect／換線／unmount。
- */
+/** 原生 `onclose` 已被卸掉，需自行發事件。*/
 export function clientCloseEvent(reason: string): CloseEvent {
   return {
     type: "close",

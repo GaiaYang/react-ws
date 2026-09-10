@@ -8,14 +8,14 @@ import { useStore } from "./use-store";
  * - `idle` — 僅初始 store；之後斷線為 `closed`（`disconnect()` 不會回到 `idle`）
  * - `connecting`／`open`／`closed` — 對應 WebSocket 當下狀態
  *
- * 錯誤用 `useWsEvents("error")`；不另設 error status。
+ * 錯誤走 `useWsEvents("error")`，不另設 error status，以免和 `closed` 搶同一瞬間的語意。
  */
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
 
 /**
  * Provider 連線意圖與重連策略階段（`WsState` 的一環）。
  *
- * 與 `status` 分開：`status` 是 WebSocket 當下連線狀態；`phase` 補足「是否在重連／是否已放棄」。
+ * 與 `status` 分開：`status` 是 WebSocket 當下狀態，無法表達「正在等重連」或「已放棄」。
  *
  * - `idle` — 未連線、未排程重連（初始或手動 `disconnect()`）
  * - `connecting` — 首次或手動 `connect()` 連線中
@@ -29,8 +29,9 @@ export type WsPhase =
 /**
  * 可訂閱的連線層 state（低頻更新）。
  *
- * 只放連線健康與重連等生命週期資訊；不放訊息 payload／歷史／業務資料
- * （請用 `useWsEvents` 或自行管理）。欄位限原始值，不放物件或陣列。
+ * 只放連線健康與重連等生命週期；訊息 payload 請用 `useWsEvents`，以免每則訊息都重渲染。
+ *
+ * 欄位限原始值，避免訂閱時因新物件／陣列而誤判變更。
  */
 export type WsState = {
   /** 連線生命週期狀態 */
@@ -38,27 +39,23 @@ export type WsState = {
   /** Provider 連線意圖與重連策略階段 */
   phase: WsPhase;
   /**
-   * 本輪已排程的自動重連次數（意外斷線當下 +1，非重連成功才 +1）。
+   * 本輪已排程的自動重連次數（意外斷線當下 +1，不是重連成功才 +1）。
    *
-   * 顯示為 `n` 時，代表第 `n` 次重連已排程或進行中。
+   * 撐滿 `reconnectMinUptimeMs` 才歸零，避免短命連線把退避打回第一階。
    *
-   * 連線維持 `reconnectMinUptimeMs` 後才歸零（預設 5 秒；`0` 則 `open` 即歸零）。
-   * 主動 `disconnect()` 立刻歸零。
-   *
-   * 手動 `connect()` 在非重連等待時立刻歸零；重連計時器等待中呼叫則等 `open` 後撐滿
-   * `reconnectMinUptimeMs` 才歸零。
+   * 計時器等待中的手動 `connect()` 不算新一輪，否則退避會被打斷。
    */
   reconnectAttempt: number;
   /**
    * 本輪自動重連已達 `reconnectMax` 且最後一次也失敗。
    *
-   * 手動 `connect()` 或 `disconnect()` 設定為 `false`。
+   * 手動 `connect()`／`disconnect()` 清掉，好讓 UI 能再試。
    */
   reconnectExhausted: boolean;
   /**
    * 下次自動重連的預定時間（`Date.now()` 時間軸的毫秒數）。
    *
-   * 未在等待重連時為 `0`。因為等待有退避與隨機抖動，這是唯一能得知本次要等多久的來源。
+   * 未在等待時為 `0`。退避與抖動後，這是唯一能得知本次要等多久的來源。
    */
   nextReconnectAt: number;
 };
@@ -87,7 +84,7 @@ export function useWsStoreApi(): WsStoreApi {
   return store;
 }
 
-/** 訂閱 {@link WsState}；建議以 selector 只取需要的連線層欄位。 */
+/** 訂閱 {@link WsState}；建議以 selector 只取需要的欄位，避免無關欄位更新也重渲染 */
 export function createUseWsStore(StoreCtx: Context<WsStoreApi | null>) {
   function useWsStore(): WsState;
   function useWsStore<T>(selector: (state: WsState) => T): T;

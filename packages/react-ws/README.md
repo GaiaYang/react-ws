@@ -20,12 +20,8 @@
 
 ## Documentation
 
-- English (full): [`README.en.md`](./README.en.md)
-- 繁體中文（完整）：[`README.zh-TW.md`](./README.zh-TW.md)
-
-GitHub:
-
-https://github.com/GaiaYang/react-ws/blob/main/packages/react-ws/README.en.md
+- English: [`README.en.md`](./README.en.md)
+- 繁體中文: [`README.zh-TW.md`](./README.zh-TW.md)
 
 ## Links
 

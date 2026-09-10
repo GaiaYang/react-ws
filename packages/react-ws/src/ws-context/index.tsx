@@ -21,7 +21,6 @@ import {
   createUseWsStore,
   createWsStoreContext,
   useWsStoreApi,
-  type WsPhase,
 } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
 import { useReconnect } from "./reconnect";
@@ -40,11 +39,6 @@ function resolveMaybeGetter<T>(value: MaybeGetter<T>): T {
   return typeof value === "function" ? (value as () => T)() : value;
 }
 
-/**
- * 建立一組綁定同一連線設定的 `WsProvider` 與 hooks。
- *
- * 策略（含 getter）在此次呼叫固定；執行期只透過 `connect`／`disconnect` 操作連線。
- */
 export function createWsContext(options: CreateWsContextOptions) {
   const {
     url,
@@ -81,29 +75,17 @@ export function createWsContext(options: CreateWsContextOptions) {
         reconnectJitter,
         reconnectMinUptimeMs,
       },
-      {
-        getAttempt: () => store.getState().reconnectAttempt,
-        setAttempt: (reconnectAttempt) => store.setState({ reconnectAttempt }),
-        setExhausted: (reconnectExhausted) =>
-          store.setState({ reconnectExhausted }),
-        setNextAt: (nextReconnectAt) => store.setState({ nextReconnectAt }),
-      },
+      store.setState,
     );
     const outgoingQueue = useOutgoingQueue(outgoingQueueMax);
-    const livenessSession = useLiveness(liveness, () => wsRef.current);
+    const livenessSession = useLiveness(liveness);
 
     const getStatus = useCallback<WsContextValue["getStatus"]>(
       () => store.getState().status,
       [store],
     );
 
-    /**
-     * 主動斷線與 Provider unmount 共用 cleanup。
-     *
-     * 關閉 socket 時以 `reason` 寫入合成 `close` 事件（`type`／`code`／`reason`／`wasClean`）：
-     * - `"client disconnect"` — `disconnect()`
-     * - `"provider unmount"` — `WsProvider` unmount
-     */
+    /** `disconnect` 與 unmount 走同一條 cleanup，避免兩處漏清 timer／佇列。*/
     const teardown = useCallback(
       (reason: string) => {
         reconnect.cancel();
@@ -165,7 +147,6 @@ export function createWsContext(options: CreateWsContextOptions) {
         status: "connecting",
         phase: fromReconnect ? "reconnecting" : "connecting",
       });
-
       wsRef.current = ws;
 
       ws.onopen = (event) => {
@@ -173,7 +154,7 @@ export function createWsContext(options: CreateWsContextOptions) {
         reconnect.onOpen();
         store.setState({ status: "open", phase: "open" });
         outgoingQueue.flush((data) => ws.send(data));
-        livenessSession.start();
+        livenessSession.start(ws);
         emitter.emit("open", event);
       };
 
@@ -193,17 +174,15 @@ export function createWsContext(options: CreateWsContextOptions) {
         if (wsRef.current === ws) wsRef.current = null;
         livenessSession.stop();
         const scheduled = reconnect.scheduleAfterClose();
-        // 讓 close handler 讀到已更新的 status／phase
-        const patch: { status: "closed"; phase?: WsPhase } = {
+        store.setState((state) => ({
           status: "closed",
-        };
-        if (scheduled) {
-          patch.phase = "reconnecting";
-        } else if (store.getState().phase !== "idle") {
-          // 主動 disconnect 已是 idle，不要蓋成 stopped
-          patch.phase = "stopped";
-        }
-        store.setState(patch);
+          // teardown 已把 phase 設成 idle；蓋成 stopped 會讓刻意斷線看起來像放棄重連
+          phase: scheduled
+            ? "reconnecting"
+            : state.phase === "idle"
+              ? "idle"
+              : "stopped",
+        }));
         emitter.emit("close", event);
       };
     }, [store, emitter, outgoingQueue, livenessSession, reconnect]);

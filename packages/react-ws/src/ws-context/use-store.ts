@@ -1,5 +1,4 @@
-// 訂閱外部 store（selector + useSyncExternalStore）。
-// 靈感來自 zustand/react 的 useStore（非完整搬移；本層 selector 必填、無 useDebugValue）。
+// 對齊 zustand/react 的 useStore 子集；本層 selector 必填、無 useDebugValue。
 // Project: zustand — https://github.com/pmndrs/zustand
 // Author: pmndrs (Poimandres) — https://github.com/pmndrs
 // License: MIT — https://github.com/pmndrs/zustand/blob/main/LICENSE

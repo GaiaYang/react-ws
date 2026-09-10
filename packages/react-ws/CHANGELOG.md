@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-09-11
+
+### Changed
+
+- Reconnect writes `reconnectAttempt` / `reconnectExhausted` / `nextReconnectAt` in one store patch and keeps the cycle count internally, so it no longer reads back from the store
+- Liveness `start(socket)` binds ping and timeout to that socket (same public `liveness` options)
+- `WsStatus` / `WsPhase` / `WsState` JSDoc: shorter field contracts for IDE consumers; behavior unchanged
+- Tests renamed from `*.smoke.test.ts` to `*.test.ts`
+
 ## [0.6.2] - 2026-09-09
 
 ### Changed

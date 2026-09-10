@@ -37,7 +37,7 @@ Other commands from the root:
 ```bash
 pnpm build:pkg        # Build packages/react-ws to dist/
 pnpm typecheck        # Typecheck the whole workspace
-pnpm test             # packages/react-ws smoke tests
+pnpm test             # packages/react-ws tests
 ```
 
 ### Add a dependency to a workspace package

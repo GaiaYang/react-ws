@@ -3,7 +3,7 @@ import { useState } from "react";
 export type OutgoingData = Parameters<WebSocket["send"]>[0];
 
 export interface OutgoingQueue {
-  /** 未連線時入隊；佇列關閉或已滿則 `false`（不丟舊訊息） */
+  /** 關或滿時回 `false`：丟新的、不丟舊的，避免後到的蓋掉還在等的 */
   enqueue: (data: OutgoingData) => boolean;
   clear: () => void;
   flush: (send: (data: OutgoingData) => void) => void;

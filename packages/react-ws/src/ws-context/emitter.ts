@@ -1,4 +1,3 @@
-// Typed event emitter。
 // 執行期邏輯對齊 nanoevents 的 createNanoEvents（幾乎逐行相同）；型別為本套件收斂版。
 // Project: nanoevents — https://github.com/ai/nanoevents
 // Author: Andrey Sitnik — https://github.com/ai

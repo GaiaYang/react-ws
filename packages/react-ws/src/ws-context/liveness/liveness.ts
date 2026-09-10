@@ -7,8 +7,7 @@ import {
 import type { LivenessOptions } from "./types";
 
 export interface Liveness {
-  /** socket 取自此次 `start` 當下的 `getActiveSocket`（逾時計時綁定該線） */
-  start: () => void;
+  start: (socket: WebSocket) => void;
   stop: () => void;
   onMessage: (data: unknown) => void;
 }
@@ -19,25 +18,19 @@ const DISABLED_LIVENESS: Liveness = {
   onMessage() {},
 };
 
-export function createLiveness(
-  options: LivenessOptions,
-  getActiveSocket: () => WebSocket | null,
-): Liveness {
+export function createLiveness(options: LivenessOptions): Liveness {
   let controller: LivenessController | null = null;
 
   return {
-    start() {
+    start(socket) {
       controller?.stop();
-      const sessionSocket = getActiveSocket();
       // 逾時不可關掉之後重連的新線
       controller = createLivenessController(options, () => {
-        if (sessionSocket?.readyState === WebSocket.OPEN) sessionSocket.close();
+        if (socket.readyState === WebSocket.OPEN) socket.close();
       });
       const sendPing = createPingSender(options.ping, (data) => {
-        if (!sessionSocket || sessionSocket.readyState !== WebSocket.OPEN) {
-          return false;
-        }
-        sessionSocket.send(JSON.stringify(data));
+        if (socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify(data));
         return true;
       });
       controller.start(sendPing);
@@ -54,12 +47,9 @@ export function createLiveness(
   };
 }
 
-export function useLiveness(
-  options: LivenessOptions | undefined,
-  getActiveSocket: () => WebSocket | null,
-): Liveness {
+export function useLiveness(options: LivenessOptions | undefined): Liveness {
   const [session] = useState(() =>
-    options ? createLiveness(options, getActiveSocket) : DISABLED_LIVENESS,
+    options ? createLiveness(options) : DISABLED_LIVENESS,
   );
   return session;
 }

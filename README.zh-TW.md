@@ -37,7 +37,7 @@ Demo 透過 `workspace:*` 從編譯後的 `dist/` 引用 `react-ws-context`。`p
 ```bash
 pnpm build:pkg        # 編譯 packages/react-ws 到 dist/
 pnpm typecheck        # 全 workspace 型別檢查
-pnpm test             # packages/react-ws smoke tests
+pnpm test             # packages/react-ws tests
 ```
 
 ### 為子專案加依賴

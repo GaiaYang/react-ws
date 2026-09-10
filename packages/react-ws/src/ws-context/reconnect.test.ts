@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createReconnect, reconnectDelay } from "./reconnect";
+import {
+  createReconnect,
+  reconnectDelay,
+  type ReconnectPatch,
+} from "./reconnect";
 
-function createCallbacks() {
+function createApply() {
   let attempt = 0;
   let exhausted = false;
   let nextAt = 0;
@@ -17,17 +21,16 @@ function createCallbacks() {
         return nextAt;
       },
     },
-    callbacks: {
-      getAttempt: () => attempt,
-      setAttempt: (n: number) => {
-        attempt = n;
-      },
-      setExhausted: (v: boolean) => {
-        exhausted = v;
-      },
-      setNextAt: (at: number) => {
-        nextAt = at;
-      },
+    apply: (patch: ReconnectPatch) => {
+      if (patch.reconnectAttempt !== undefined) {
+        attempt = patch.reconnectAttempt;
+      }
+      if (patch.reconnectExhausted !== undefined) {
+        exhausted = patch.reconnectExhausted;
+      }
+      if (patch.nextReconnectAt !== undefined) {
+        nextAt = patch.nextReconnectAt;
+      }
     },
   };
 }
@@ -42,12 +45,12 @@ describe("reconnect", () => {
   });
 
   it("schedules reconnect and resets attempt on open", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 0 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(onReconnect);
 
@@ -67,12 +70,12 @@ describe("reconnect", () => {
   });
 
   it("stops after reconnectMax, sets exhausted, manual connect resets", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 2 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(onReconnect);
 
@@ -94,11 +97,11 @@ describe("reconnect", () => {
   });
 
   it("cancel prevents schedules and resets attempt", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 0 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(vi.fn());
 
@@ -113,12 +116,12 @@ describe("reconnect", () => {
   });
 
   it("exposes the scheduled reconnect time only while waiting", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 0 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(onReconnect);
 
@@ -128,26 +131,25 @@ describe("reconnect", () => {
     expect(reconnect.scheduleAfterClose()).toBe(true);
     expect(refs.nextAt - Date.now()).toBe(100);
 
-    // 計時器觸發後開始連線，不再是等待中
     vi.advanceTimersByTime(100);
     reconnect.onConnectBegin();
     expect(refs.nextAt).toBe(0);
   });
 
   it("clearTimerTrigger only after the timer has fired", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 0 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(onReconnect);
 
     reconnect.onConnectBegin();
     expect(reconnect.scheduleAfterClose()).toBe(true);
     expect(reconnect.clearTimerTrigger()).toBe(false);
-    // 計時器還在跑，預定時間仍然有效
+    // 計時器還在跑：clear 必須失敗，否則 UI 會以為已經不在等
     expect(refs.nextAt).not.toBe(0);
 
     vi.advanceTimersByTime(100);
@@ -161,11 +163,11 @@ describe("reconnect", () => {
   });
 
   it("reconnectMs 0 disables scheduling", () => {
-    const { callbacks } = createCallbacks();
+    const { apply } = createApply();
 
     const reconnect = createReconnect(
       { reconnectMs: 0, reconnectMax: 5 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(vi.fn());
 
@@ -173,7 +175,7 @@ describe("reconnect", () => {
   });
 
   it("waits with exponential backoff, capped by reconnectDelayMaxMs", () => {
-    const { callbacks } = createCallbacks();
+    const { apply } = createApply();
     const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
@@ -183,11 +185,10 @@ describe("reconnect", () => {
         reconnectBackoff: 2,
         reconnectDelayMaxMs: 300,
       },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(onReconnect);
 
-    // 100 → 200 → 300（上限）
     for (const expected of [100, 200, 300]) {
       reconnect.onConnectBegin();
       expect(reconnect.scheduleAfterClose()).toBe(true);
@@ -200,11 +201,11 @@ describe("reconnect", () => {
   });
 
   it("keeps the cycle when the connection dies before reconnectMinUptimeMs", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 0, reconnectMinUptimeMs: 5000 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(vi.fn());
 
@@ -220,11 +221,11 @@ describe("reconnect", () => {
   });
 
   it("resets the cycle once the connection survives reconnectMinUptimeMs", () => {
-    const { refs, callbacks } = createCallbacks();
+    const { refs, apply } = createApply();
 
     const reconnect = createReconnect(
       { reconnectMs: 100, reconnectMax: 0, reconnectMinUptimeMs: 5000 },
-      callbacks,
+      apply,
     );
     reconnect.bindOnReconnect(vi.fn());
 
@@ -259,12 +260,11 @@ describe("reconnectDelay", () => {
       reconnectBackoff: 2,
       reconnectJitter: 0.5,
     };
-    // 第 2 次退避為 200，抖動後落在 [100, 200]
     vi.spyOn(Math, "random").mockReturnValue(0);
     expect(reconnectDelay(2, options)).toBe(200);
     vi.spyOn(Math, "random").mockReturnValue(0.5);
     expect(reconnectDelay(2, options)).toBe(150);
-    // random() 不含 1，這是開區間的下界
+    // random() 不含 1；mock 1 是為了碰到開區間下界
     vi.spyOn(Math, "random").mockReturnValue(1);
     expect(reconnectDelay(2, options)).toBe(100);
   });

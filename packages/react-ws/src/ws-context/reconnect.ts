@@ -4,10 +4,9 @@ import { useState } from "react";
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 /**
- * 重連排程設定；欄位語意見 `CreateWsContextOptions`。
+ * 欄位語意見 `CreateWsContextOptions`。
  *
- * 退避相關欄位可省略，省略即為「固定間隔、無上限、不抖動、open 即歸零」；
- * 預設值由 `createWsContext` 決定，這一層不重複定義。
+ * 退避相關欄位可省略；預設值由 `createWsContext` 決定，這一層不重複定義。
  */
 export interface ReconnectOptions {
   reconnectMs: number;
@@ -19,8 +18,6 @@ export interface ReconnectOptions {
 }
 
 /**
- * 第 `attempt` 次（1 起算）自動重連要等待的毫秒數。
- *
  * 順序刻意是「退避 → 套上限 → 向下抖動」：
  * - 先套上限再抖動，`reconnectDelayMaxMs` 才是真正的上限
  * - 抖動只往下扣，等待頂到上限後各 client 仍會錯開；若改成上下對稱再夾回上限，
@@ -52,51 +49,36 @@ export function reconnectDelay(
   return Math.min(Math.round(jittered), MAX_TIMEOUT_MS);
 }
 
-export interface ReconnectCallbacks {
-  getAttempt: () => number;
-  setAttempt: (attempt: number) => void;
-  setExhausted: (exhausted: boolean) => void;
-  setNextAt: (at: number) => void;
+/** 一次呼叫可帶多欄，避免拆成多次 `setState` 讓訂閱者看到半套狀態 */
+export interface ReconnectPatch {
+  reconnectAttempt?: number;
+  reconnectExhausted?: boolean;
+  nextReconnectAt?: number;
 }
 
 export interface Reconnect {
-  /**
-   * 開始連線時呼叫；回傳 `true` 表示由重連計時器觸發。
-   *
-   * 非計時器觸發時歸零本輪 `reconnectAttempt`；計時器等待中或剛觸發則不歸零。
-   */
+  /** 計時器觸發的那次不能歸零 attempt，否則退避從頭來 */
   onConnectBegin: () => boolean;
-  /**
-   * 連線成功；歸零本輪重連計數。
-   *
-   * `reconnectMinUptimeMs > 0` 時改為排一個計時器，連線撐滿該時間才歸零。
-   */
   onOpen: () => void;
-  /** 意外斷線後嘗試重連；有排程則回 `true` */
   scheduleAfterClose: () => boolean;
-  /**
-   * 重連計時器已觸發、但本次 connect 未能開線時呼叫。
-   *
-   * 只清 `fromTimer`，不當作主動斷線、不歸零 `reconnectAttempt`。
-   *
-   * @returns 是否確為計時器已觸發（尚有待跑的 timer 則為 `false`）
-   */
+  /** 只清 `fromTimer`：這次排程已消耗，但不是使用者主動放棄 */
   clearTimerTrigger: () => boolean;
-  /** 主動斷線或元件卸載：取消計時器並歸零本輪計數 */
   cancel: () => void;
   bindOnReconnect: (fn: () => void) => void;
 }
 
 export function createReconnect(
   options: ReconnectOptions,
-  callbacks: ReconnectCallbacks,
+  apply: (patch: ReconnectPatch) => void,
 ): Reconnect {
   let intentionalClose = false;
   let fromTimer = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  /** minUptime：連線撐滿才歸零本輪計數；撐不滿會在斷線時清掉 */
+  /** 撐不滿要在斷線時清掉，否則之後還是會把 attempt 歸零 */
   let uptimeTimer: ReturnType<typeof setTimeout> | null = null;
   let onReconnect = () => {};
+  /** 本輪計數以這裡為準；store 是給訂閱者看的，不回讀以免拿到半套狀態 */
+  let attempt = 0;
 
   const clearTimer = () => {
     if (timer != null) {
@@ -113,27 +95,27 @@ export function createReconnect(
   };
 
   const resetCycle = () => {
-    if (callbacks.getAttempt() !== 0) callbacks.setAttempt(0);
-    callbacks.setExhausted(false);
-  };
-
-  /** 自行記著上次寫入的值，避免無變化也去動 store */
-  let nextAt = 0;
-  const setNextAt = (at: number) => {
-    if (nextAt === at) return;
-    nextAt = at;
-    callbacks.setNextAt(at);
+    attempt = 0;
+    apply({ reconnectAttempt: 0, reconnectExhausted: false });
   };
 
   return {
     onConnectBegin() {
       clearTimer();
       clearUptimeTimer();
-      setNextAt(0);
       intentionalClose = false;
       const reconnecting = fromTimer;
-      if (!fromTimer) resetCycle();
       fromTimer = false;
+      if (reconnecting) {
+        apply({ nextReconnectAt: 0 });
+      } else {
+        attempt = 0;
+        apply({
+          nextReconnectAt: 0,
+          reconnectAttempt: 0,
+          reconnectExhausted: false,
+        });
+      }
       return reconnecting;
     },
 
@@ -156,16 +138,17 @@ export function createReconnect(
       // 連線沒撐滿 minUptime 就斷了，這次不算穩定：清掉待跑的歸零，讓退避沿用本輪計數
       clearUptimeTimer();
       if (intentionalClose || options.reconnectMs <= 0) return false;
-      const attempt = callbacks.getAttempt();
       if (options.reconnectMax > 0 && attempt >= options.reconnectMax) {
-        callbacks.setExhausted(true);
+        apply({ reconnectExhausted: true });
         return false;
       }
-      const next = attempt + 1;
-      callbacks.setAttempt(next);
+      attempt += 1;
       fromTimer = true;
-      const delay = reconnectDelay(next, options);
-      setNextAt(Date.now() + delay);
+      const delay = reconnectDelay(attempt, options);
+      apply({
+        reconnectAttempt: attempt,
+        nextReconnectAt: Date.now() + delay,
+      });
       timer = setTimeout(() => {
         timer = null;
         onReconnect();
@@ -176,8 +159,8 @@ export function createReconnect(
     clearTimerTrigger() {
       if (!fromTimer || timer != null) return false;
       fromTimer = false;
-      // 計時器已觸發但沒開成線，這個時間點已經過去了
-      setNextAt(0);
+      // 計時器已觸發但沒開成線：這個時間點已經過去，清掉以免 UI 還在倒數
+      apply({ nextReconnectAt: 0 });
       return true;
     },
 
@@ -185,8 +168,12 @@ export function createReconnect(
       intentionalClose = true;
       clearTimer();
       clearUptimeTimer();
-      setNextAt(0);
-      resetCycle();
+      attempt = 0;
+      apply({
+        nextReconnectAt: 0,
+        reconnectAttempt: 0,
+        reconnectExhausted: false,
+      });
     },
 
     bindOnReconnect(fn) {
@@ -197,8 +184,8 @@ export function createReconnect(
 
 export function useReconnect(
   options: ReconnectOptions,
-  callbacks: ReconnectCallbacks,
+  apply: (patch: ReconnectPatch) => void,
 ): Reconnect {
-  const [session] = useState(() => createReconnect(options, callbacks));
+  const [session] = useState(() => createReconnect(options, apply));
   return session;
 }

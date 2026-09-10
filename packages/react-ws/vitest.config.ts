@@ -3,6 +3,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "jsdom",
-    include: ["src/**/*.smoke.test.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 });

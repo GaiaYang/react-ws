@@ -1,6 +1,3 @@
-// 最小 smoke：MockWebSocket + RTL，覆蓋連線層主路徑。
-// 跑：pnpm test（在 packages/react-ws）
-
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +22,7 @@ class MockWebSocket {
   onclose: WsListener = null;
 
   constructor(url: string, protocols?: string | string[]) {
-    // 模擬原生：非法 URL 在建構時同步 throw，且不列入 instances
+    // 非法 URL 必須在 push 前進 throw，否則 instances 會留下一顆建失敗的 socket
     if (!/^wss?:\/\//i.test(url)) {
       throw new SyntaxError("invalid WebSocket url");
     }
@@ -44,19 +41,17 @@ class MockWebSocket {
     this.onclose?.(new CloseEvent("close", { code: 1000, wasClean: true }));
   }
 
-  /** 測試用：模擬伺服器開通 */
   open(): void {
     this.readyState = MockWebSocket.OPEN;
     this.onopen?.(new Event("open"));
   }
 
-  /** 測試用：模擬收到訊息 */
   message(data: unknown): void {
     const payload = typeof data === "string" ? data : JSON.stringify(data);
     this.onmessage?.(new MessageEvent("message", { data: payload }));
   }
 
-  /** 測試用：模擬非預期斷線（可觸發重連） */
+  /** 走 onclose，不是 `disconnect()`，才能測到自動重連 */
   drop(): void {
     this.readyState = MockWebSocket.CLOSED;
     this.onclose?.(
@@ -82,7 +77,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("createWsContext smoke", () => {
+describe("createWsContext", () => {
   it("connect → message → disconnect", async () => {
     const { WsProvider, useWsActions, useWsStore, useWsEvents } =
       createWsContext({
@@ -145,7 +140,6 @@ describe("createWsContext smoke", () => {
       container.querySelector("[data-phase]")?.getAttribute("data-phase"),
     ).toBe("idle");
     expect(closes.some((r) => r === "client disconnect")).toBe(true);
-    // intentional disconnect 不排程重連
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 
@@ -156,7 +150,7 @@ describe("createWsContext smoke", () => {
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
-      // 固定間隔、open 即歸零：這裡只驗 provider 的重連流程，退避數學看 reconnect.smoke.test.ts
+      // 固定間隔、open 即歸零：這裡只驗 provider 的重連流程，退避數學看 reconnect.test.ts
       reconnectBackoff: 1,
       reconnectJitter: 0,
       reconnectMinUptimeMs: 0,
@@ -361,7 +355,7 @@ describe("createWsContext smoke", () => {
 
     expect(api.sendJson({ n: 1 })).toBe(true);
     expect(api.sendJson({ n: 2 })).toBe(true);
-    expect(api.sendJson({ n: 3 })).toBe(false); // 滿
+    expect(api.sendJson({ n: 3 })).toBe(false);
 
     await act(async () => {
       latestWs().open();
@@ -387,9 +381,9 @@ describe("createWsContext smoke", () => {
       api.sendJson({ n: 5 });
       api.disconnect();
     });
-    // disconnect 清空佇列；已送出的仍在上一顆 socket 的 sent 裡
-    expect(api.sendJson({ n: 6 })).toBe(true); // 未連線但佇列空，可再入隊
-    expect(MockWebSocket.instances).toHaveLength(2); // 無重連
+    // disconnect 清佇列；已送出的仍在上一顆 socket 的 sent 裡，不能拿最新一顆來對
+    expect(api.sendJson({ n: 6 })).toBe(true);
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 
   it("liveness sends ping on interval when open", async () => {
