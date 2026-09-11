@@ -14,6 +14,8 @@ export interface LivenessOptions {
    * 判定傳入資料是否為 pong。
    *
    * 符合則清除逾時計時；該筆仍會觸發 `"message"`。
+   *
+   * 擲出視為不是 pong（不清逾時），該筆仍發 `"message"`。
    */
   isPong: (data: unknown) => boolean;
 }

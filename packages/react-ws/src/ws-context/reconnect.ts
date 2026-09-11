@@ -1,7 +1,5 @@
 import { useState } from "react";
-
-/** `setTimeout` 延遲上限；超過會溢位成立即觸發 */
-const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+import { MAX_TIMEOUT_MS } from "./socket";
 
 /**
  * 欄位語意見 `CreateWsContextOptions`。
@@ -37,16 +35,26 @@ export function reconnectDelay(
     reconnectJitter = 0,
   } = options;
 
+  // 非有限數不能走 Math.max／乘法，否則會得到 NaN，setTimeout(fn, NaN) 等於立刻觸發
   // 倍率小於 1 會讓等待越重試越短，退避就失去意義
-  const factor = Math.max(reconnectBackoff, 1);
-  const backoff = reconnectMs * factor ** Math.max(attempt - 1, 0);
-  const capped =
-    reconnectDelayMaxMs > 0 ? Math.min(backoff, reconnectDelayMaxMs) : backoff;
-  const jitter = Math.min(Math.max(reconnectJitter, 0), 1);
+  const factor = Math.max(
+    Number.isFinite(reconnectBackoff) ? reconnectBackoff : 1,
+    1,
+  );
+  const ms = Number.isFinite(reconnectMs) ? reconnectMs : 0;
+  const backoff = ms * factor ** Math.max(attempt - 1, 0);
+  const delayMax = Number.isFinite(reconnectDelayMaxMs)
+    ? reconnectDelayMaxMs
+    : 0;
+  const capped = delayMax > 0 ? Math.min(backoff, delayMax) : backoff;
+  const jitterRatio = Number.isFinite(reconnectJitter) ? reconnectJitter : 0;
+  const jitter = Math.min(Math.max(jitterRatio, 0), 1);
   // Math.random() 不含 1，倍率落在 (0, 1]，不必再夾負值
   const jittered = capped * (1 - Math.random() * jitter);
+  const rounded = Math.round(jittered);
+  if (!Number.isFinite(rounded)) return MAX_TIMEOUT_MS;
   // 未設上限時退避會一路放大到 Infinity，仍要壓回平台能用的延遲
-  return Math.min(Math.round(jittered), MAX_TIMEOUT_MS);
+  return Math.min(Math.max(rounded, 0), MAX_TIMEOUT_MS);
 }
 
 /** 一次呼叫可帶多欄，避免拆成多次 `setState` 讓訂閱者看到半套狀態 */
@@ -121,6 +129,8 @@ export function createReconnect(
 
     onOpen() {
       const minUptime = options.reconnectMinUptimeMs ?? 0;
+      // 非有限不能走 setTimeout：NaN 會立刻觸發，短命連線保護就沒了
+      if (!Number.isFinite(minUptime)) return;
       if (minUptime <= 0) {
         resetCycle();
         return;
@@ -137,7 +147,13 @@ export function createReconnect(
     scheduleAfterClose() {
       // 連線沒撐滿 minUptime 就斷了，這次不算穩定：清掉待跑的歸零，讓退避沿用本輪計數
       clearUptimeTimer();
-      if (intentionalClose || options.reconnectMs <= 0) return false;
+      if (
+        intentionalClose ||
+        !Number.isFinite(options.reconnectMs) ||
+        options.reconnectMs <= 0
+      ) {
+        return false;
+      }
       if (options.reconnectMax > 0 && attempt >= options.reconnectMax) {
         apply({ reconnectExhausted: true });
         return false;
@@ -166,6 +182,7 @@ export function createReconnect(
 
     cancel() {
       intentionalClose = true;
+      fromTimer = false;
       clearTimer();
       clearUptimeTimer();
       attempt = 0;

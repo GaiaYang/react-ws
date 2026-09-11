@@ -91,6 +91,8 @@ export interface CreateWsContextOptions {
    * 將原始 `MessageEvent.data` 轉成業務資料。
    *
    * 預設：字串嘗試 `JSON.parse`，失敗則原樣回傳；非字串原樣回傳。
+   *
+   * 擲出時發 `"error"`，不發 `"message"`，不關線。
    */
   parse?: (data: MessageEvent["data"]) => unknown;
   /** 探活設定；省略則不啟用 */
@@ -107,7 +109,7 @@ export interface WsEvents {
   message: (data: unknown, event: MessageEvent) => void;
   /** 連線建立 */
   open: (event: Event) => void;
-  /** 原生 socket 錯誤，或握手／取值失敗時的合成 `{ type: "error" }` */
+  /** 原生 socket 錯誤，或握手／取值／`parse` 失敗時的合成 `{ type: "error" }` */
   error: (event: Event) => void;
   /** 連線關閉 */
   close: (event: CloseEvent) => void;

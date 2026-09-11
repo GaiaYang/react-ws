@@ -203,7 +203,7 @@ createWsContext({
 | `reconnectJitter`      | `number`                                  | `0.2`  | 把每次等待隨機縮短的幅度，取值 `[0, 1]`。預設 `0.2` 表示實際等待為預定時間的 80% 到 100%。`1` 為 full jitter。`0` 不抖動。 |
 | `reconnectMinUptimeMs` | `number`                                  | `5000` | 連線需維持多久才歸零重連週期，單位毫秒。`0` 表示 `open` 即歸零。                                                           |
 | `outgoingQueueMax`     | `number`                                  | `0`    | socket 未連線時的待送佇列上限。`0` 關閉佇列。                                                                              |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | 見下方 | 將原始 `MessageEvent.data` 轉成業務資料。                                                                                  |
+| `parse`                | `(data: MessageEvent["data"]) => unknown` | 見下方 | 將原始 `MessageEvent.data` 轉成業務資料。擲出時發 `"error"`，不發 `"message"`，不關線。 |
 | `liveness`             | `LivenessOptions`                         | 無     | 應用層心跳。省略則不啟用。                                                                                                 |
 
 預設 `parse` 會對字串跑 `JSON.parse`，失敗則回傳原字串。非字串原樣回傳。
@@ -310,7 +310,7 @@ useWsStore<T>(selector: (state: WsState) => T): T
 | ----------- | ---------------------------------------------- | ---------------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 為經 `parse` 處理後的結果。 |
 | `"open"`    | `(event: Event) => void`                       | 連線建立。                         |
-| `"error"`   | `(event: Event) => void`                       | socket 或握手錯誤。                |
+| `"error"`   | `(event: Event) => void`                       | socket、握手或 `parse` 錯誤。      |
 | `"close"`   | `(event: CloseEvent) => void`                  | 連線關閉。                         |
 
 非主動斷線時，Provider 會先把 store 寫成 `status: "closed"` 及對應的 `phase`，再執行 `close` 回呼。主動 `disconnect()` 與 Provider 卸載也是這個順序：先更新 store，當時有 socket 才觸發 `close`。
@@ -340,7 +340,7 @@ Liveness 是可選的應用層心跳機制，用來偵測 WebSocket 看似仍開
 | `intervalMs` | `number`                     | ping 間隔，單位毫秒。            |
 | `timeoutMs`  | `number`                     | 等待 pong 的時間，單位毫秒。     |
 | `ping`       | `unknown \| (() => unknown)` | ping 內容。函式則每次呼叫一次。  |
-| `isPong`     | `(data: unknown) => boolean` | 判定 parse 後的資料是否為 pong。 |
+| `isPong`     | `(data: unknown) => boolean` | 判定 parse 後的資料是否為 pong。擲出視為不是 pong，該筆仍發 `"message"`。 |
 
 ```tsx
 createWsContext({

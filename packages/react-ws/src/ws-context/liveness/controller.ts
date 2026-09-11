@@ -1,4 +1,4 @@
-import { resolvePingPayload } from "./resolve-ping";
+import { MAX_TIMEOUT_MS } from "../socket";
 import type { LivenessOptions } from "./types";
 
 export interface LivenessController {
@@ -25,12 +25,27 @@ export function createLivenessController(
   }
 
   function armTimeout(): void {
-    clearTimeoutTimer();
-    timeoutId = setTimeout(onTimeout, timeoutMs);
+    // 已在等 pong 就不要重設，否則 timeoutMs > intervalMs 時逾時永遠不到
+    if (timeoutId != null) return;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return;
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      if (intervalId != null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      sendPingRef = null;
+      onTimeout();
+    }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
   }
 
   function tick(): void {
-    sendPingRef?.();
+    try {
+      sendPingRef?.();
+    } catch {
+      void 0;
+    }
+    // 不論 ping 成敗都掛逾時，否則死線永遠偵測不到
     armTimeout();
   }
 
@@ -39,7 +54,8 @@ export function createLivenessController(
       sendPingRef = sendPing;
       // setInterval 不會立刻跑；否則要等滿一個 interval 才有第一次 ping
       tick();
-      intervalId = setInterval(tick, intervalMs);
+      if (!Number.isFinite(intervalMs) || intervalMs < 0) return;
+      intervalId = setInterval(tick, Math.min(intervalMs, MAX_TIMEOUT_MS));
     },
 
     stop() {
@@ -52,16 +68,11 @@ export function createLivenessController(
     },
 
     onMessage(data) {
-      if (isPong(data)) clearTimeoutTimer();
+      try {
+        if (isPong(data)) clearTimeoutTimer();
+      } catch {
+        void 0;
+      }
     },
-  };
-}
-
-export function createPingSender(
-  ping: LivenessOptions["ping"],
-  sendJson: (data: unknown) => boolean,
-): () => void {
-  return () => {
-    sendJson(resolvePingPayload(ping));
   };
 }

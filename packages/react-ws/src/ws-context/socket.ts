@@ -1,3 +1,16 @@
+/** 平台 `setTimeout`／`setInterval` 延遲上限；超過會溢位成立即觸發 */
+export const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+/** JSON.stringify 得不到字串時（undefined／function／symbol／circular）回 `null` */
+export function stringifyJson(data: unknown): string | null {
+  try {
+    const json = JSON.stringify(data);
+    return typeof json === "string" ? json : null;
+  } catch {
+    return null;
+  }
+}
+
 export function detachAndClose(ws: WebSocket): void {
   // 不先清掉 handler 的話，原生 onclose 會再排重連、改 store
   ws.onopen = null;

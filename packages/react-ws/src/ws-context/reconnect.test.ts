@@ -115,6 +115,31 @@ describe("reconnect", () => {
     expect(refs.nextAt).toBe(0);
   });
 
+  it("cancel then connect is not treated as a fired timer", () => {
+    const { apply } = createApply();
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 0 },
+      apply,
+    );
+    reconnect.bindOnReconnect(vi.fn());
+
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    reconnect.cancel();
+    expect(reconnect.onConnectBegin()).toBe(false);
+  });
+
+  it("non-finite reconnectMs does not schedule", () => {
+    const onReconnect = vi.fn();
+    for (const reconnectMs of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const { apply } = createApply();
+      const reconnect = createReconnect({ reconnectMs, reconnectMax: 0 }, apply);
+      reconnect.bindOnReconnect(onReconnect);
+      expect(reconnect.scheduleAfterClose()).toBe(false);
+    }
+    vi.advanceTimersByTime(1_000);
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
   it("exposes the scheduled reconnect time only while waiting", () => {
     const { refs, apply } = createApply();
     const onReconnect = vi.fn();
@@ -240,6 +265,29 @@ describe("reconnect", () => {
     expect(refs.attempt).toBe(0);
     expect(refs.exhausted).toBe(false);
   });
+
+  it("non-finite reconnectMinUptimeMs does not reset the cycle immediately", () => {
+    const { refs, apply } = createApply();
+    const reconnect = createReconnect(
+      {
+        reconnectMs: 100,
+        reconnectMax: 0,
+        reconnectMinUptimeMs: Number.NaN,
+      },
+      apply,
+    );
+    reconnect.bindOnReconnect(vi.fn());
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    vi.advanceTimersByTime(100);
+    reconnect.onConnectBegin();
+    reconnect.onOpen();
+    expect(refs.attempt).toBe(1);
+
+    vi.advanceTimersByTime(1);
+    expect(refs.attempt).toBe(1);
+  });
 });
 
 describe("reconnectDelay", () => {
@@ -306,5 +354,16 @@ describe("reconnectDelay", () => {
         reconnectBackoff: 2,
       }),
     ).toBe(2 ** 31 - 1);
+  });
+
+  it("non-finite backoff and jitter yield a finite non-zero delay", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const delay = reconnectDelay(1, {
+      reconnectMs: 100,
+      reconnectMax: 0,
+      reconnectBackoff: Number.NaN,
+      reconnectJitter: Number.NaN,
+    });
+    expect(delay).toBe(100);
   });
 });

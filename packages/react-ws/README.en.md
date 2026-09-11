@@ -203,7 +203,7 @@ See [Reconnect](#reconnect), [Liveness](#liveness), and [Outgoing queue](#outgoi
 | `reconnectJitter`      | `number`                                  | `0.2`     | Random shorten of each wait, in `[0, 1]`. Default `0.2` waits 80% to 100% of the scheduled delay. `1` is full jitter. `0` disables jitter.      |
 | `reconnectMinUptimeMs` | `number`                                  | `5000`    | How long a connection must stay open, in ms, before the reconnect cycle resets. `0` resets on `open`.                                           |
 | `outgoingQueueMax`     | `number`                                  | `0`       | Max outgoing queue size while not connected. `0` disables the queue.                                                                            |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | see below | Turns raw `MessageEvent.data` into app data.                                                                                                    |
+| `parse`                | `(data: MessageEvent["data"]) => unknown` | see below | Turns raw `MessageEvent.data` into app data. A throw emits `"error"`, skips `"message"`, and does not close the socket. |
 | `liveness`             | `LivenessOptions`                         | none      | Application-layer heartbeat. Disabled when omitted.                                                                                             |
 
 Default `parse` runs `JSON.parse` on a string and returns the raw string if parse fails. It returns non-strings as-is.
@@ -310,7 +310,7 @@ Throws `"useWsEvents 必須包在對應的 WsProvider 內"` outside the matching
 | ----------- | ---------------------------------------------- | ----------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the parsed payload. |
 | `"open"`    | `(event: Event) => void`                       | Connection open.              |
-| `"error"`   | `(event: Event) => void`                       | Socket or handshake error.    |
+| `"error"`   | `(event: Event) => void`                       | Socket, handshake, or `parse` error. |
 | `"close"`   | `(event: CloseEvent) => void`                  | Connection closed.            |
 
 On an unintentional close, the Provider writes `status: "closed"` and the matching `phase` before it runs the `close` handler. Intentional `disconnect()` and Provider unmount use the same order: store first, then `close` when a socket exists.
@@ -340,7 +340,7 @@ When `liveness` is set, the Provider sends periodic application-layer pings dire
 | `intervalMs` | `number`                     | Ping interval in ms.                          |
 | `timeoutMs`  | `number`                     | Wait for pong in ms.                          |
 | `ping`       | `unknown \| (() => unknown)` | Ping payload. A function is called each time. |
-| `isPong`     | `(data: unknown) => boolean` | Whether parsed data is a pong.                |
+| `isPong`     | `(data: unknown) => boolean` | Whether parsed data is a pong. A throw is treated as not a pong; `"message"` still fires. |
 
 ```tsx
 createWsContext({
