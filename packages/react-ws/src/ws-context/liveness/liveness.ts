@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { stringifyJson } from "../socket";
 import {
   createLivenessController,
   type LivenessController,
@@ -31,9 +30,7 @@ export function createLiveness(options: LivenessOptions): Liveness {
       controller.start(() => {
         if (socket.readyState !== WebSocket.OPEN) return;
         const ping = options.ping;
-        const json = stringifyJson(typeof ping === "function" ? ping() : ping);
-        if (json === null) return;
-        socket.send(json);
+        socket.send(typeof ping === "function" ? ping() : ping);
       });
     },
 

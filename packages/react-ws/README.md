@@ -9,7 +9,6 @@
 
 - Reconnect with backoff, jitter, and max delay
 - Liveness detection
-- Outgoing message queue
 - React 18+
 - TypeScript support
 

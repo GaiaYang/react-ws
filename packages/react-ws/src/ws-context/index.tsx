@@ -18,7 +18,6 @@ import type {
   WsEvents,
 } from "./types";
 import { useLiveness } from "./liveness/liveness";
-import { useOutgoingQueue } from "./outgoing-queue";
 import {
   createUseWsStore,
   createWsStoreContext,
@@ -41,7 +40,7 @@ function resolveMaybeGetter<T>(value: MaybeGetter<T>): T {
   return typeof value === "function" ? (value as () => T)() : value;
 }
 
-/** handler 擲出不可打斷 flush／改用新 socket／liveness */
+/** handler 擲出不可打斷改用新 socket／liveness */
 function emitSafe<E extends keyof WsEvents>(
   emitter: WsEventsEmitter,
   event: E,
@@ -65,7 +64,6 @@ export function createWsContext(options: CreateWsContextOptions) {
     reconnectDelayMaxMs = 30_000,
     reconnectJitter = 0.2,
     reconnectMinUptimeMs = 5000,
-    outgoingQueueMax = 0,
     parse = defaultParse,
     liveness,
   } = options;
@@ -91,7 +89,6 @@ export function createWsContext(options: CreateWsContextOptions) {
     const store = useWsStoreApi();
     const emitter = useWsEventsApi();
     const reconnect = useReconnect(reconnectOptions, store.setState);
-    const outgoingQueue = useOutgoingQueue(outgoingQueueMax);
     const livenessSession = useLiveness(liveness);
 
     const getStatus = useCallback<WsContextValue["getStatus"]>(
@@ -99,13 +96,12 @@ export function createWsContext(options: CreateWsContextOptions) {
       [store],
     );
 
-    /** `disconnect` 與 unmount 共用，避免兩處漏清 timer／佇列 */
+    /** `disconnect` 與 unmount 共用，避免兩處漏清 timer */
     const teardown = useCallback(
       (reason: string) => {
         connectGenerationRef.current += 1;
         reconnect.cancel();
         livenessSession.stop();
-        outgoingQueue.clear();
         store.setState({ phase: "idle", status: "closed" });
         const ws = wsRef.current;
         wsRef.current = null;
@@ -114,7 +110,7 @@ export function createWsContext(options: CreateWsContextOptions) {
           emitSafe(emitter, "close", clientCloseEvent(reason));
         }
       },
-      [store, emitter, outgoingQueue, livenessSession, reconnect],
+      [store, emitter, livenessSession, reconnect],
     );
 
     const disconnect = useCallback<WsContextValue["disconnect"]>(
@@ -181,23 +177,6 @@ export function createWsContext(options: CreateWsContextOptions) {
         if (wsRef.current !== ws) return;
         reconnect.onOpen();
         store.setState({ status: "open", phase: "open" });
-        try {
-          outgoingQueue.flush((data) => {
-            if (wsRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
-              throw new Error("socket not open");
-            }
-            try {
-              ws.send(data);
-            } catch (err) {
-              if (wsRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
-                throw err;
-              }
-              emitSafe(emitter, "error", { type: "error" } as Event);
-            }
-          });
-        } catch {
-          return;
-        }
         livenessSession.start(ws);
         emitSafe(emitter, "open", event);
       };
@@ -236,7 +215,7 @@ export function createWsContext(options: CreateWsContextOptions) {
         }));
         emitSafe(emitter, "close", event);
       };
-    }, [store, emitter, outgoingQueue, livenessSession, reconnect]);
+    }, [store, emitter, livenessSession, reconnect]);
 
     useEffect(() => {
       reconnect.bindOnReconnect(connect);
@@ -244,17 +223,14 @@ export function createWsContext(options: CreateWsContextOptions) {
       return () => teardown("provider unmount");
     }, [connect, teardown, reconnect]);
 
-    const send = useCallback<WsContextValue["send"]>(
-      (data) => {
-        const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(data);
-          return true;
-        }
-        return outgoingQueue.enqueue(data);
-      },
-      [outgoingQueue],
-    );
+    const send = useCallback<WsContextValue["send"]>((data) => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(data);
+        return true;
+      }
+      return false;
+    }, []);
 
     const sendJson = useCallback<WsContextValue["sendJson"]>(
       (data) => {

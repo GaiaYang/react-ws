@@ -12,11 +12,10 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
     reconnectMs: 2000,
     autoConnect: true,
     reconnectMax: DEMO_WS_RECONNECT_MAX,
-    outgoingQueueMax: 5,
     liveness: {
       intervalMs: 10_000,
       timeoutMs: 5_000,
-      ping: { type: "PING" },
+      ping: JSON.stringify({ type: "PING" }),
       // DEMO liveness 回應協議（須與 mock-ws/src/liveness.ts 對齊）
       isPong: (data) =>
         typeof data === "object" &&

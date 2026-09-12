@@ -7,24 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-12
+
+### Breaking
+
+- Removed `outgoingQueueMax` and the outgoing queue. Buffering while disconnected is a delivery concern, not connection lifecycle. Apps should send again after `open`, so this package can focus on open / close / reconnect / liveness.
+- `liveness.ping` is no longer auto-`JSON.stringify`ed. Ping content is application protocol; callers must supply data ready for `WebSocket.send` (for example `JSON.stringify` themselves) so the connection layer does not shape the payload.
+
+### Removed
+
+- `outgoingQueueMax`
+- Outgoing queue (`outgoing-queue.ts`)
+
 ## [0.6.4] - 2026-09-11
 
 ### Fixed
 
-- liveness：已在等待 pong 的逾時不會被後續 ping 重設；逾時後不再 ping，即使 `close()` 沒有呼叫 `stop()`
-- 待送佇列：`flush` 在 `send` throw 時依原順序把未送出的放回；socket 仍是當前且 OPEN 時只丟掉該筆、發出 `"error"`、繼續送後面
-- 事件 handler 擲出不再打斷連線層：`flush` 仍送完並啟動 liveness；替換舊線時仍改用新 socket
-- 替換舊線時，`"close"` handler 裡的 `disconnect()`／`connect()` 以 handler 那次為準，不會被同一輪 `connect()` 蓋掉
-- 過期 `onclose`（函式已被取走、socket 已不是當前）不再停 liveness、排重連、emit，也不寫 store
-- 重連計時器已觸發但沒有 `globalThis.WebSocket` 時進入 `closed` / `stopped`，不再卡在 `reconnecting`
-- 非有限的 `reconnectBackoff` / `reconnectJitter` / `reconnectDelayMaxMs` 改走 `reconnectDelay` 既有預設；非有限的 `reconnectMs` 視為關閉重連，避免 `setTimeout` 立刻觸發
-- 非有限的 `reconnectMinUptimeMs` 不立刻歸零退避週期
-- `disconnect()` 清掉重連計時器旗標，後續手動 `connect()` 為 `connecting`
-- 握手失敗先寫 `stopped` 再 emit `"error"`，handler 擲出也不卡住自動重試
-- `sendJson` 在 `JSON.stringify` 得不到字串時回傳 `false`（例如 `undefined`、function、symbol）
-- 非有限的 `outgoingQueueMax` 視為關閉佇列
-- `parse` 擲出發 `"error"`、不發 `"message"`、不關線；`isPong` 擲出視為不是 pong，該筆仍發 `"message"`
-- liveness ping 擲出仍掛逾時，且不擋住 `"open"`；非有限的 `intervalMs`／`timeoutMs` 不立刻狂 ping 或關線；超過平台延遲上限的值改夾回上限
+- Liveness: a pong timeout already in progress is not reset by later pings; after timeout, pinging stops even if `close()` never calls `stop()`
+- Outgoing queue: on `send` throw during `flush`, unsent items are restored in order; if the socket is still current and `OPEN`, only that item is dropped, `"error"` is emitted, and the rest continue
+- Event handler throws no longer interrupt the connection layer: `flush` still finishes and liveness still starts; replacing an old socket still switches to the new one
+- When replacing a socket, `disconnect()` / `connect()` inside a `"close"` handler wins for that handler turn and is not overwritten by the same `connect()` round
+- Stale `onclose` (handlers already cleared, or the socket is no longer current) no longer stops liveness, schedules reconnect, emits, or writes the store
+- When a reconnect timer has fired but `globalThis.WebSocket` is missing, the store becomes `closed` / `stopped` instead of staying in `reconnecting`
+- Non-finite `reconnectBackoff` / `reconnectJitter` / `reconnectDelayMaxMs` fall back to `reconnectDelay` defaults; non-finite `reconnectMs` is treated as reconnect off, so `setTimeout` does not fire immediately
+- Non-finite `reconnectMinUptimeMs` does not reset the backoff cycle immediately
+- `disconnect()` clears the reconnect-timer-fired flag so a later manual `connect()` is `connecting`
+- Handshake failure writes `stopped` before emitting `"error"`, so a throwing handler cannot leave auto-retry stuck
+- `sendJson` returns `false` when `JSON.stringify` does not produce a string (e.g. `undefined`, function, symbol)
+- Non-finite `outgoingQueueMax` is treated as queue off
+- A throwing `parse` emits `"error"`, skips `"message"`, and does not close the socket; a throwing `isPong` is treated as not a pong, and `"message"` still fires
+- A throwing liveness ping still arms the timeout and does not block `"open"`; non-finite `intervalMs` / `timeoutMs` do not ping or close in a tight loop; values above the platform delay limit are clamped
 
 ## [0.6.3] - 2026-09-11
 

@@ -19,7 +19,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: (data) =>
           typeof data === "object" &&
           data != null &&
@@ -46,7 +46,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: (data) =>
           typeof data === "object" &&
           data != null &&
@@ -81,7 +81,7 @@ describe("liveness", () => {
     const session = createLiveness({
       intervalMs: 100,
       timeoutMs: 50,
-      ping: { type: "PING" },
+      ping: JSON.stringify({ type: "PING" }),
       isPong: () => false,
     });
 
@@ -101,7 +101,7 @@ describe("liveness", () => {
     const session = createLiveness({
       intervalMs: 100,
       timeoutMs: 50,
-      ping: { type: "PING" },
+      ping: JSON.stringify({ type: "PING" }),
       isPong: () => false,
     });
 
@@ -119,7 +119,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 2_500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: () => false,
       },
       onTimeout,
@@ -150,7 +150,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 2_500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: () => false,
       },
       onTimeout,
@@ -173,7 +173,7 @@ describe("liveness", () => {
     const session = createLiveness({
       intervalMs: 1_000,
       timeoutMs: 2_500,
-      ping: { type: "PING" },
+      ping: JSON.stringify({ type: "PING" }),
       isPong: () => false,
     });
 
@@ -194,7 +194,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: (data) =>
           typeof data === "object" &&
           data != null &&
@@ -228,7 +228,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: () => false,
       },
       onTimeout,
@@ -252,7 +252,7 @@ describe("liveness", () => {
       {
         intervalMs: 1_000,
         timeoutMs: 500,
-        ping: { type: "PING" },
+        ping: JSON.stringify({ type: "PING" }),
         isPong: () => {
           throw new Error("isPong");
         },
@@ -265,6 +265,29 @@ describe("liveness", () => {
 
     vi.advanceTimersByTime(500);
     expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends each ping getter result without JSON.stringify", () => {
+    const send = vi.fn();
+    const ws = { readyState: 1, close: vi.fn(), send } as unknown as WebSocket;
+    const bytes = new Uint8Array([1, 2, 3]);
+    let n = 0;
+    const session = createLiveness({
+      intervalMs: 1_000,
+      timeoutMs: 10_000,
+      ping: () => {
+        n += 1;
+        return n === 1 ? "raw-ping" : bytes;
+      },
+      isPong: () => false,
+    });
+
+    session.start(ws);
+    vi.advanceTimersByTime(1_000);
+    expect(send).toHaveBeenNthCalledWith(1, "raw-ping");
+    expect(send).toHaveBeenNthCalledWith(2, bytes);
+    expect(send.mock.calls[1]?.[0]).toBe(bytes);
+    session.stop();
   });
 
   it("createLiveness ping throw still times out the socket", () => {
@@ -291,7 +314,7 @@ describe("liveness", () => {
     const session = createLiveness({
       intervalMs: 1_000,
       timeoutMs: Number.NaN,
-      ping: { type: "PING" },
+      ping: JSON.stringify({ type: "PING" }),
       isPong: () => false,
     });
 
@@ -299,6 +322,10 @@ describe("liveness", () => {
     vi.advanceTimersByTime(1);
     expect(close).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(10_000);
+    expect(close).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(11);
   });
 
   it("non-finite intervalMs does not ping in a tight loop", () => {
@@ -308,7 +335,7 @@ describe("liveness", () => {
     const session = createLiveness({
       intervalMs: Number.NaN,
       timeoutMs: 10_000,
-      ping: { type: "PING" },
+      ping: JSON.stringify({ type: "PING" }),
       isPong: () => false,
     });
 

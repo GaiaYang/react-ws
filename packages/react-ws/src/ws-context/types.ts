@@ -61,12 +61,6 @@ export interface CreateWsContextOptions {
    */
   reconnectMinUptimeMs?: number;
   /**
-   * 未連線時待送佇列上限。`0` 關閉佇列。
-   *
-   * @default 0
-   */
-  outgoingQueueMax?: number;
-  /**
    * 將 `MessageEvent.data` 轉成業務資料。
    *
    * 擲出時發 `"error"`，不發 `"message"`，不關線。
@@ -90,12 +84,12 @@ export interface WsEvents {
 /** `useWsActions()` 回傳值。連線狀態請用 `useWsStore`。 */
 export interface WsContextValue {
   /**
-   * 傳送 `WebSocket.send` 可接受的資料。
+   * 僅在連線開啟時送出。未開啟回傳 `false`，不暫存。
    *
-   * @returns 已送出或已入隊為 `true`；否則 `false`
+   * @returns 已送出為 `true`；未開啟為 `false`
    */
   send: (data: Parameters<WebSocket["send"]>[0]) => boolean;
-  /** `JSON.stringify` 後 `send`。無法序列化時回傳 `false`。 */
+  /** `JSON.stringify` 後呼叫 `send`。無法序列化時回傳 `false`。 */
   sendJson: (data: unknown) => boolean;
   /**
    * 取值後建構 socket；成功才關閉舊線。本身不 throw。
@@ -105,7 +99,7 @@ export interface WsContextValue {
    * 若來自已觸發的重連計時器：進入 `closed`／`stopped`，停止自動重試。
    */
   connect: () => void;
-  /** 主動斷線；不自動重連，清空待送佇列。 */
+  /** 主動斷線；不自動重連。 */
   disconnect: () => void;
   /** 讀取當下 `status`，不訂閱。 */
   getStatus: () => WsStatus;
