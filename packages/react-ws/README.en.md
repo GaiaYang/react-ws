@@ -5,7 +5,7 @@
 
 > [繁體中文](./README.zh-TW.md)
 
-`react-ws-context` is a WebSocket connection layer for React that keeps connection lifecycle, connection state, and WebSocket events separate. It is designed for applications that need reconnect, liveness, and an outgoing queue without putting WebSocket message traffic into React state.
+`react-ws-context` is a WebSocket connection layer for React that keeps connection lifecycle, connection state, and WebSocket events separate. Use it when you need reconnect, liveness, and an outgoing queue, and you do not want WebSocket message traffic in React state.
 
 ```text
                        react-ws-context
@@ -35,7 +35,9 @@ pnpm add react-ws-context react
 # or: yarn add react-ws-context react
 ```
 
-Requires React 18 or newer (`useSyncExternalStore`). No runtime npm dependencies. Needs `globalThis.WebSocket`. The package entry is marked `"use client"`, so Next.js App Router can import it. A SPA ignores the directive.
+Requires React 18 or newer (`useSyncExternalStore`). No runtime npm dependencies. Needs `globalThis.WebSocket`: if it is missing, `connect()` is a no-op; if that call comes from an already-fired reconnect timer, the store becomes `status: "closed"`, `phase: "stopped"`.
+
+The package entry is marked `"use client"`, so Next.js App Router can import it. A SPA ignores the directive.
 
 ## Quick start
 
@@ -98,7 +100,7 @@ Two sockets need two `createWsContext` calls, for example one for app traffic an
 
 `useWsStore` uses `useSyncExternalStore`. Prefer a selector so a change to `nextReconnectAt` does not re-render a component that only shows `status`.
 
-`useWsEvents` subscribes on mount and unsubscribes on unmount. Updating the callback does not re-subscribe. Changing `type` re-subscribes. Each call listens to one event type.
+`useWsEvents` subscribes on mount and unsubscribes on unmount. Updating the callback does not re-subscribe. Changing `type` re-subscribes. Each call listens to one event type. If a handler throws, the error does not propagate and does not interrupt connection-layer work (for example flushing the outgoing queue, switching to a new socket, or starting liveness).
 
 Connection state has two fields that often move together but mean different things:
 
@@ -159,6 +161,8 @@ These apply when `reconnectMs > 0`.
 
 Default schedule with `reconnectMs: 1000`: wait about 1s, then 2s, then 4s, capped at 30s, each delay shortened by a random 0% to 20%. The cycle resets after the socket stays open for 5s.
 
+`0` does not mean the same thing everywhere: `reconnectMs: 0` (and `outgoingQueueMax: 0`) turns the feature off; `reconnectMax: 0` and `reconnectDelayMaxMs: 0` mean no cap.
+
 Fixed interval, no jitter, reset on every `open`:
 
 ```ts
@@ -176,7 +180,7 @@ createWsContext({
 | Field              | Default | Notes                                              |
 | ------------------ | ------- | -------------------------------------------------- |
 | `parse`            | see API | Turns raw `MessageEvent.data` into app data        |
-| `liveness`         | none    | Application-layer ping and pong. Omitted means off |
+| `liveness`         | none    | Application-layer heartbeat. Omitted means off |
 | `outgoingQueueMax` | `0`     | Max queued sends while disconnected. `0` means off |
 
 See [Reconnect](#reconnect), [Liveness](#liveness), and [Outgoing queue](#outgoing-queue).
@@ -206,7 +210,7 @@ See [Reconnect](#reconnect), [Liveness](#liveness), and [Outgoing queue](#outgoi
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | see below | Turns raw `MessageEvent.data` into app data. A throw emits `"error"`, skips `"message"`, and does not close the socket. |
 | `liveness`             | `LivenessOptions`                         | none      | Application-layer heartbeat. Disabled when omitted.                                                                                             |
 
-Default `parse` runs `JSON.parse` on a string and returns the raw string if parse fails. It returns non-strings as-is.
+Default `parse`: try `JSON.parse` on strings (raw string on failure); return non-strings as-is.
 
 #### Returns
 
@@ -267,7 +271,9 @@ A call with no selector subscribes to the whole `WsState`. Incoming messages are
 | `reconnectExhausted` | `boolean`  | Auto-reconnect hit `reconnectMax` and the last attempt also failed.                       |
 | `nextReconnectAt`    | `number`   | When the next auto-reconnect is due, as `Date.now()` milliseconds. `0` while not waiting. |
 
-`reconnectAttempt` is `n` when the nth reconnect is scheduled or in progress. It increments when an unintentional close queues a retry, not when the retry succeeds. It resets after the connection has stayed open for `reconnectMinUptimeMs` (default 5s). When that option is `0`, it resets on `open`. `disconnect()` resets it immediately. A manual `connect()` resets it immediately unless a reconnect timer is already waiting. Then it resets once that connection stays open for `reconnectMinUptimeMs`.
+`reconnectAttempt` is `n` when the nth reconnect is scheduled or in progress. It increments when an unintentional close queues a retry, not when the retry succeeds.
+
+It resets after the connection has stayed open for `reconnectMinUptimeMs` (default 5s). When that option is `0`, it resets on `open`. `disconnect()` resets it immediately. A manual `connect()` also resets it immediately unless a reconnect timer is already waiting; then it resets once that connection stays open for `reconnectMinUptimeMs`.
 
 A later `connect()` or `disconnect()` sets `reconnectExhausted` back to `false`.
 
@@ -310,12 +316,12 @@ Throws `"useWsEvents 必須包在對應的 WsProvider 內"` outside the matching
 | ----------- | ---------------------------------------------- | ----------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the parsed payload. |
 | `"open"`    | `(event: Event) => void`                       | Connection open.              |
-| `"error"`   | `(event: Event) => void`                       | Socket, handshake, or `parse` error. |
+| `"error"`   | `(event: Event) => void`                       | Socket, handshake, or `parse` error. Handshake / resolve failures are `{ type: "error" }`, not an `Error`. |
 | `"close"`   | `(event: CloseEvent) => void`                  | Connection closed.            |
 
 On an unintentional close, the Provider writes `status: "closed"` and the matching `phase` before it runs the `close` handler. Intentional `disconnect()` and Provider unmount use the same order: store first, then `close` when a socket exists.
 
-Handshake failure emits `"error"` as `{ type: "error" }`, without `close` and without replacing an existing socket.
+Handshake or resolve failure emits `"error"` as `{ type: "error" }` (not an `Error` instance; no `message` field), without `close` and without replacing an existing socket.
 
 When `connect()` replaces an existing socket after a successful construct, `close` fires first with reason `"reconnect"`, then `status` becomes `"connecting"`. `phase` becomes `"reconnecting"` when this `connect()` came from the reconnect timer, otherwise `"connecting"`.
 
@@ -329,9 +335,11 @@ Reconnect reopens the socket after an unintentional close without remounting the
 
 ## Liveness
 
-Liveness is an optional application-layer heartbeat used to detect a WebSocket that still looks open but no longer responds normally at the application layer. It is not a WebSocket control-frame ping.
+Liveness is an application-layer heartbeat. It detects a WebSocket that still looks open but no longer responds there. It is not a WebSocket control-frame ping.
 
-When `liveness` is set, the Provider sends periodic application-layer pings directly to the open socket. Those pings skip the outgoing queue. If no matching pong arrives within `timeoutMs`, the Provider closes the socket. That close can trigger reconnect when `reconnectMs > 0`.
+When `liveness` is set, the Provider periodically writes application-layer pings to the open socket. Those pings skip the outgoing queue. If no matching pong arrives within `timeoutMs`, the Provider closes the socket. When `reconnectMs > 0`, that close follows the unintentional-close reconnect path.
+
+If the payload is not JSON-serializable or `ping` throws, that send is skipped, but the pong wait still starts. With no pong, the socket still closes after `timeoutMs`.
 
 `LivenessOptions`
 
@@ -339,7 +347,7 @@ When `liveness` is set, the Provider sends periodic application-layer pings dire
 | ------------ | ---------------------------- | --------------------------------------------- |
 | `intervalMs` | `number`                     | Ping interval in ms.                          |
 | `timeoutMs`  | `number`                     | Wait for pong in ms.                          |
-| `ping`       | `unknown \| (() => unknown)` | Ping payload. A function is called each time. |
+| `ping`       | `unknown \| (() => unknown)` | Ping payload. A function is called each time. If it is not JSON-serializable, that send is skipped, but the pong wait still starts; timeout still closes the socket. |
 | `isPong`     | `(data: unknown) => boolean` | Whether parsed data is a pong. A throw is treated as not a pong; `"message"` still fires. |
 
 ```tsx
@@ -358,7 +366,7 @@ createWsContext({
 });
 ```
 
-Incoming messages are checked with `isPong`. A pong clears the timeout timer and still fires `"message"`. The Provider sends ping payloads with `JSON.stringify`, so the ping body must be JSON-serializable.
+A pong still fires `"message"`. Skip it in the handler if it should not be treated as app traffic.
 
 ## Outgoing queue
 

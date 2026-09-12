@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { MAX_TIMEOUT_MS } from "./socket";
 
-/**
- * 欄位語意見 `CreateWsContextOptions`。
- *
- * 退避相關欄位可省略；預設值由 `createWsContext` 決定，這一層不重複定義。
- */
+/** 欄位語意見 `CreateWsContextOptions`；退避預設由 `createWsContext` 帶入。 */
 export interface ReconnectOptions {
   reconnectMs: number;
   reconnectMax: number;
@@ -16,12 +12,11 @@ export interface ReconnectOptions {
 }
 
 /**
- * 順序刻意是「退避 → 套上限 → 向下抖動」：
- * - 先套上限再抖動，`reconnectDelayMaxMs` 才是真正的上限
- * - 抖動只往下扣，等待頂到上限後各 client 仍會錯開；若改成上下對稱再夾回上限，
- *   會有一半樣本剛好落在上限值上，抖動就失效了
+ * 順序是「退避 → 套上限 → 向下抖動」：
+ * 先上限再抖動，`reconnectDelayMaxMs` 才是真正上限；
+ * 只往下扣，頂到上限後各 client 仍會錯開（上下對稱再夾回會讓半數樣本卡在上限）。
  *
- * `reconnectJitter: 1` 時即 AWS Exponential Backoff And Jitter 的 full jitter：
+ * `reconnectJitter: 1` 即 AWS full jitter：
  * https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
  */
 export function reconnectDelay(
@@ -35,8 +30,7 @@ export function reconnectDelay(
     reconnectJitter = 0,
   } = options;
 
-  // 非有限數不能走 Math.max／乘法，否則會得到 NaN，setTimeout(fn, NaN) 等於立刻觸發
-  // 倍率小於 1 會讓等待越重試越短，退避就失去意義
+  // 非有限數會產出 NaN；setTimeout(fn, NaN) 等於立刻觸發
   const factor = Math.max(
     Number.isFinite(reconnectBackoff) ? reconnectBackoff : 1,
     1,
@@ -49,15 +43,13 @@ export function reconnectDelay(
   const capped = delayMax > 0 ? Math.min(backoff, delayMax) : backoff;
   const jitterRatio = Number.isFinite(reconnectJitter) ? reconnectJitter : 0;
   const jitter = Math.min(Math.max(jitterRatio, 0), 1);
-  // Math.random() 不含 1，倍率落在 (0, 1]，不必再夾負值
   const jittered = capped * (1 - Math.random() * jitter);
   const rounded = Math.round(jittered);
   if (!Number.isFinite(rounded)) return MAX_TIMEOUT_MS;
-  // 未設上限時退避會一路放大到 Infinity，仍要壓回平台能用的延遲
+  // 未設上限時退避可到 Infinity，仍要壓回平台能用的延遲
   return Math.min(Math.max(rounded, 0), MAX_TIMEOUT_MS);
 }
 
-/** 一次呼叫可帶多欄，避免拆成多次 `setState` 讓訂閱者看到半套狀態 */
 export interface ReconnectPatch {
   reconnectAttempt?: number;
   reconnectExhausted?: boolean;
@@ -65,11 +57,11 @@ export interface ReconnectPatch {
 }
 
 export interface Reconnect {
-  /** 計時器觸發的那次不能歸零 attempt，否則退避從頭來 */
+  /** `true` 表示來自重連計時器；此時不可歸零 attempt */
   onConnectBegin: () => boolean;
   onOpen: () => void;
   scheduleAfterClose: () => boolean;
-  /** 只清 `fromTimer`：這次排程已消耗，但不是使用者主動放棄 */
+  /** 計時器已觸發、這次排程已消耗，但不是使用者主動放棄 */
   clearTimerTrigger: () => boolean;
   cancel: () => void;
   bindOnReconnect: (fn: () => void) => void;
@@ -82,10 +74,9 @@ export function createReconnect(
   let intentionalClose = false;
   let fromTimer = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  /** 撐不滿要在斷線時清掉，否則之後還是會把 attempt 歸零 */
   let uptimeTimer: ReturnType<typeof setTimeout> | null = null;
   let onReconnect = () => {};
-  /** 本輪計數以這裡為準；store 是給訂閱者看的，不回讀以免拿到半套狀態 */
+  // 本輪計數以這裡為準；不回讀 store，避免拿到半套狀態
   let attempt = 0;
 
   const clearTimer = () => {
@@ -129,7 +120,7 @@ export function createReconnect(
 
     onOpen() {
       const minUptime = options.reconnectMinUptimeMs ?? 0;
-      // 非有限不能走 setTimeout：NaN 會立刻觸發，短命連線保護就沒了
+      // NaN 會讓 setTimeout 立刻觸發，短命連線保護就沒了
       if (!Number.isFinite(minUptime)) return;
       if (minUptime <= 0) {
         resetCycle();
@@ -145,7 +136,7 @@ export function createReconnect(
     },
 
     scheduleAfterClose() {
-      // 連線沒撐滿 minUptime 就斷了，這次不算穩定：清掉待跑的歸零，讓退避沿用本輪計數
+      // 沒撐滿 minUptime：清掉待跑的歸零，讓退避沿用本輪計數
       clearUptimeTimer();
       if (
         intentionalClose ||
@@ -175,7 +166,7 @@ export function createReconnect(
     clearTimerTrigger() {
       if (!fromTimer || timer != null) return false;
       fromTimer = false;
-      // 計時器已觸發但沒開成線：這個時間點已經過去，清掉以免 UI 還在倒數
+      // 時間點已過，清掉以免 UI 還在倒數
       apply({ nextReconnectAt: 0 });
       return true;
     },

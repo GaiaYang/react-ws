@@ -10,7 +10,7 @@ export function tryHandleLiveness(
   if (typeof data !== "object" || data == null) return false;
   const msg = data as Record<string, unknown>;
   if (msg.type !== PING_MESSAGE_TYPE) return false;
-  console.log("💓 收到探活 PING");
+  console.log("💓 收到 liveness PING");
   ws.send(JSON.stringify({ type: PONG_MESSAGE_TYPE }));
   console.log("📤 回覆 PONG");
   return true;

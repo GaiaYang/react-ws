@@ -41,7 +41,7 @@ function resolveMaybeGetter<T>(value: MaybeGetter<T>): T {
   return typeof value === "function" ? (value as () => T)() : value;
 }
 
-/** handler 擲出不能改寫連線層後續步驟（flush、接手新線、探活） */
+/** handler 擲出不可打斷 flush／改用新 socket／liveness */
 function emitSafe<E extends keyof WsEvents>(
   emitter: WsEventsEmitter,
   event: E,
@@ -99,7 +99,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       [store],
     );
 
-    /** `disconnect` 與 unmount 走同一條 cleanup，避免兩處漏清 timer／佇列。*/
+    /** `disconnect` 與 unmount 共用，避免兩處漏清 timer／佇列 */
     const teardown = useCallback(
       (reason: string) => {
         connectGenerationRef.current += 1;
@@ -133,7 +133,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       let resolvedUrl: string;
       let resolvedProtocols: string | string[] | undefined;
       let ws: WebSocket;
-      // 建構失敗必須保留舊線與 store（與 getter 失敗同一條路）
+      // 建構失敗保留舊線與 store（與 getter 失敗同一路）
       try {
         resolvedUrl = resolveMaybeGetter(url);
         if (resolvedUrl === "") throw new Error("empty url");
@@ -145,7 +145,7 @@ export function createWsContext(options: CreateWsContextOptions) {
             ? new WebSocket(resolvedUrl)
             : new WebSocket(resolvedUrl, resolvedProtocols);
       } catch {
-        // 先寫 store 再 emit：handler 擲出或呼叫 disconnect() 都不能卡住重試
+        // 先 store 再 emit，避免 handler 擲出／disconnect 卡住停重試
         if (reconnect.clearTimerTrigger()) {
           store.setState({ status: "closed", phase: "stopped" });
         }
@@ -161,11 +161,11 @@ export function createWsContext(options: CreateWsContextOptions) {
       if (prev) {
         wsRef.current = null;
         detachAndClose(prev);
-        // close 仍屬舊線；若先 set connecting，handler 會把這次 close 當成新握手
+        // close 仍屬舊線；若先 set connecting，handler 會當成新握手的 close
         emitSafe(emitter, "close", clientCloseEvent("reconnect"));
       }
 
-      // handler 已 disconnect／再次 connect：這一輪建構的 socket 不能再掛上去
+      // close handler 可能已 disconnect／再次 connect，這一輪 socket 不能再掛
       if (generation !== connectGenerationRef.current) {
         detachAndClose(ws);
         return;
@@ -227,7 +227,7 @@ export function createWsContext(options: CreateWsContextOptions) {
         const scheduled = reconnect.scheduleAfterClose();
         store.setState((state) => ({
           status: "closed",
-          // teardown 已把 phase 設成 idle；蓋成 stopped 會讓刻意斷線看起來像放棄重連
+          // teardown 已是 idle；勿蓋成 stopped，否則刻意斷線像放棄重連
           phase: scheduled
             ? "reconnecting"
             : state.phase === "idle"

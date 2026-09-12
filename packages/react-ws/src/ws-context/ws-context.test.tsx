@@ -1195,7 +1195,7 @@ describe("createWsContext", () => {
       try {
         ws.open();
       } catch {
-        // error handler 擲出不該擋住 flush／探活／open
+        // error handler 擲出不該擋住 flush／liveness／open
       }
     });
     expect(ws.sent).toEqual(["a", "c", JSON.stringify({ type: "PING" })]);
@@ -1908,7 +1908,7 @@ describe("createWsContext", () => {
       try {
         api.connect();
       } catch {
-        // close handler 擲出不該擋住接手新線
+        // close handler 擲出不該擋住改用新 socket
       }
     });
     expect(MockWebSocket.instances).toHaveLength(2);

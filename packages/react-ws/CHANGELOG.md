@@ -11,20 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- 探活：已在等待 pong 的逾時不會被後續 ping 重設；逾時後不再 ping，即使 `close()` 沒有呼叫 `stop()`
+- liveness：已在等待 pong 的逾時不會被後續 ping 重設；逾時後不再 ping，即使 `close()` 沒有呼叫 `stop()`
 - 待送佇列：`flush` 在 `send` throw 時依原順序把未送出的放回；socket 仍是當前且 OPEN 時只丟掉該筆、發出 `"error"`、繼續送後面
-- 事件 handler 擲出不再打斷連線層：`flush` 仍送完並啟動探活；替換舊線時仍接手新 socket
+- 事件 handler 擲出不再打斷連線層：`flush` 仍送完並啟動 liveness；替換舊線時仍改用新 socket
 - 替換舊線時，`"close"` handler 裡的 `disconnect()`／`connect()` 以 handler 那次為準，不會被同一輪 `connect()` 蓋掉
-- 過期 `onclose`（函式已被取走、socket 已不是當前）不再停探活、排重連、emit，也不寫 store
+- 過期 `onclose`（函式已被取走、socket 已不是當前）不再停 liveness、排重連、emit，也不寫 store
 - 重連計時器已觸發但沒有 `globalThis.WebSocket` 時進入 `closed` / `stopped`，不再卡在 `reconnecting`
 - 非有限的 `reconnectBackoff` / `reconnectJitter` / `reconnectDelayMaxMs` 改走 `reconnectDelay` 既有預設；非有限的 `reconnectMs` 視為關閉重連，避免 `setTimeout` 立刻觸發
 - 非有限的 `reconnectMinUptimeMs` 不立刻歸零退避週期
 - `disconnect()` 清掉重連計時器旗標，後續手動 `connect()` 為 `connecting`
 - 握手失敗先寫 `stopped` 再 emit `"error"`，handler 擲出也不卡住自動重試
-- `sendJson` 在 `JSON.stringify` 得不到字串時回 `false`（例如 `undefined`、function、symbol）
+- `sendJson` 在 `JSON.stringify` 得不到字串時回傳 `false`（例如 `undefined`、function、symbol）
 - 非有限的 `outgoingQueueMax` 視為關閉佇列
 - `parse` 擲出發 `"error"`、不發 `"message"`、不關線；`isPong` 擲出視為不是 pong，該筆仍發 `"message"`
-- 探活 ping 擲出仍掛逾時，且不擋住 `"open"`；非有限的 `intervalMs`／`timeoutMs` 不立刻狂 ping 或關線；超過平台延遲上限的值改夾回上限
+- liveness ping 擲出仍掛逾時，且不擋住 `"open"`；非有限的 `intervalMs`／`timeoutMs` 不立刻狂 ping 或關線；超過平台延遲上限的值改夾回上限
 
 ## [0.6.3] - 2026-09-11
 

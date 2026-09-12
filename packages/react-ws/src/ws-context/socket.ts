@@ -1,7 +1,7 @@
-/** 平台 `setTimeout`／`setInterval` 延遲上限；超過會溢位成立即觸發 */
+/** 平台 timer 延遲上限；超過會溢位，變成立刻觸發 */
 export const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
-/** JSON.stringify 得不到字串時（undefined／function／symbol／circular）回 `null` */
+/** 無法得到字串時回 `null`，呼叫端應略過送出 */
 export function stringifyJson(data: unknown): string | null {
   try {
     const json = JSON.stringify(data);
@@ -12,7 +12,7 @@ export function stringifyJson(data: unknown): string | null {
 }
 
 export function detachAndClose(ws: WebSocket): void {
-  // 不先清掉 handler 的話，原生 onclose 會再排重連、改 store
+  // 不先清 handler，原生 onclose 會再排重連、改 store
   ws.onopen = null;
   ws.onmessage = null;
   ws.onerror = null;
@@ -20,7 +20,7 @@ export function detachAndClose(ws: WebSocket): void {
   if (ws.readyState < WebSocket.CLOSING) ws.close();
 }
 
-/** 原生 `onclose` 已被卸掉，需自行發事件。*/
+/** 原生 `onclose` 已卸掉時，自行補發 close */
 export function clientCloseEvent(reason: string): CloseEvent {
   return {
     type: "close",

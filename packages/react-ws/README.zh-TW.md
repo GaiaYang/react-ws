@@ -5,7 +5,7 @@
 
 > [English](./README.en.md)
 
-`react-ws-context` 是給 React 用的 WebSocket 連線層，將連線生命週期、連線狀態與 WebSocket 事件分開管理。適合需要重連、liveness 與 outgoing queue 等連線層機制，同時不希望 WebSocket 訊息流量直接進入 React state 的應用。
+`react-ws-context` 是給 React 用的 WebSocket 連線層，把連線生命週期、連線狀態與 WebSocket 事件分開。需要重連、liveness 與待送佇列，又不想讓訊息流量進 React state 時可以用它。
 
 ```text
                        react-ws-context
@@ -35,7 +35,9 @@ pnpm add react-ws-context react
 # or: yarn add react-ws-context react
 ```
 
-需要 React 18 或更新版本（`useSyncExternalStore`）。沒有執行期 npm 依賴。需要 `globalThis.WebSocket`。套件入口標有 `"use client"`，Next.js App Router 可以直接引用。一般 SPA 會忽略此標記。
+需要 React 18 或更新版本（`useSyncExternalStore`）。沒有執行期 npm 依賴。需要 `globalThis.WebSocket`：若環境沒有它，`connect()` 不會做事；若是重連計時器已觸發後才呼叫，store 會變成 `status: "closed"`、`phase: "stopped"`。
+
+套件入口標有 `"use client"`，Next.js App Router 可以直接引用。一般 SPA 會忽略此標記。
 
 ## 快速開始
 
@@ -98,7 +100,7 @@ function Chat() {
 
 `useWsStore` 使用 `useSyncExternalStore`。建議帶 selector，這樣只顯示 `status` 的元件不會因 `nextReconnectAt` 變動而重繪。
 
-`useWsEvents` 在掛載時訂閱、卸載時取消訂閱。更新回呼不會重新訂閱；變更 `type` 時才會重新訂閱。一次呼叫只聽一種事件。
+`useWsEvents` 在掛載時訂閱、卸載時取消訂閱。更新回呼不會重新訂閱；變更 `type` 時才會重新訂閱。一次呼叫只聽一種事件。handler 擲出不會向外冒泡，也不會打斷連線層後續步驟（例如送完待送佇列、改用新 socket、啟動 liveness）。
 
 連線狀態有兩個常一起變動、但語意不同的欄位：
 
@@ -159,6 +161,8 @@ createWsContext({
 
 `reconnectMs: 1000` 的預設排程：約等 1s、再 2s、再 4s，上限 30s，每次再向下隨機縮短 0% 到 20%。socket 維持開啟 5s 後歸零週期。
 
+`0` 的語意不盡相同：`reconnectMs: 0`（以及 `outgoingQueueMax: 0`）表示關閉；`reconnectMax: 0` 與 `reconnectDelayMaxMs: 0` 表示不設上限。
+
 固定間隔、不抖動、每次 `open` 即歸零：
 
 ```ts
@@ -176,7 +180,7 @@ createWsContext({
 | 欄位               | 預設 | 說明                                           |
 | ------------------ | ---- | ---------------------------------------------- |
 | `parse`            | 見 API | 將原始 `MessageEvent.data` 轉成業務資料      |
-| `liveness`         | 無   | 應用層 ping 與 pong。省略則不啟用              |
+| `liveness`         | 無   | 應用層心跳。省略則不啟用                   |
 | `outgoingQueueMax` | `0`  | 未連線時待送佇列上限。`0` 表示關閉             |
 
 見 [重連](#重連)、[Liveness](#liveness)、[待送佇列](#待送佇列)。
@@ -206,7 +210,7 @@ createWsContext({
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | 見下方 | 將原始 `MessageEvent.data` 轉成業務資料。擲出時發 `"error"`，不發 `"message"`，不關線。 |
 | `liveness`             | `LivenessOptions`                         | 無     | 應用層心跳。省略則不啟用。                                                                                                 |
 
-預設 `parse` 會對字串跑 `JSON.parse`，失敗則回傳原字串。非字串原樣回傳。
+預設 `parse`：字串嘗試 `JSON.parse`（失敗則原樣）；非字串原樣回傳。
 
 #### 回傳值
 
@@ -267,7 +271,9 @@ useWsStore<T>(selector: (state: WsState) => T): T
 | `reconnectExhausted` | `boolean`  | 自動重連已達 `reconnectMax`，且最後一次也失敗。                |
 | `nextReconnectAt`    | `number`   | 下次自動重連何時到期，為 `Date.now()` 毫秒。沒在等待時為 `0`。 |
 
-`reconnectAttempt` 為 `n` 時，代表第 n 次重連已排程或進行中。它在非主動斷線、決定要重試時增加，不是連上才增加。連線維持開啟滿 `reconnectMinUptimeMs` 後才歸零（預設 5 秒）。該選項為 `0` 時，`open` 即歸零。`disconnect()` 立刻歸零。手動 `connect()` 在不是正在等重連時立刻歸零。若正在等重連計時器，要等連上並維持開啟滿 `reconnectMinUptimeMs` 才歸零。
+`reconnectAttempt` 為 `n` 時，代表第 n 次重連已排程或進行中。它在非主動斷線、決定要重試時加一，不是連上才加。
+
+連線維持開啟滿 `reconnectMinUptimeMs` 後才歸零（預設 5 秒）。該選項為 `0` 時，`open` 即歸零。`disconnect()` 立刻歸零。手動 `connect()` 若不在等重連計時器，也立刻歸零；若正在等，要等這次連上並維持開啟滿 `reconnectMinUptimeMs` 才歸零。
 
 之後的 `connect()` 或 `disconnect()` 會把 `reconnectExhausted` 設回 `false`。
 
@@ -310,12 +316,12 @@ useWsStore<T>(selector: (state: WsState) => T): T
 | ----------- | ---------------------------------------------- | ---------------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 為經 `parse` 處理後的結果。 |
 | `"open"`    | `(event: Event) => void`                       | 連線建立。                         |
-| `"error"`   | `(event: Event) => void`                       | socket、握手或 `parse` 錯誤。      |
+| `"error"`   | `(event: Event) => void`                       | socket、握手或 `parse` 錯誤。握手／取值失敗為 `{ type: "error" }`，不是 `Error`。 |
 | `"close"`   | `(event: CloseEvent) => void`                  | 連線關閉。                         |
 
 非主動斷線時，Provider 會先把 store 寫成 `status: "closed"` 及對應的 `phase`，再執行 `close` 回呼。主動 `disconnect()` 與 Provider 卸載也是這個順序：先更新 store，當時有 socket 才觸發 `close`。
 
-握手失敗會發出 `"error"`，內容為 `{ type: "error" }`，不觸發 `close`，也不替換現有 socket。
+握手或取值失敗會發出 `"error"`，內容為 `{ type: "error" }`（不是 `Error` 實例，也沒有 `message`），不觸發 `close`，也不替換現有 socket。
 
 `connect()` 在新 socket 建構成功後替換既有 socket 時，先觸發 `close`，reason 為 `"reconnect"`，再將 `status` 設為 `"connecting"`。若這次 `connect()` 來自重連計時器，`phase` 為 `"reconnecting"`，否則為 `"connecting"`。
 
@@ -329,9 +335,11 @@ useWsStore<T>(selector: (state: WsState) => T): T
 
 ## Liveness
 
-Liveness 是可選的應用層心跳機制，用來偵測 WebSocket 看似仍開啟，但應用層已無法正常回應的情況。它不是 WebSocket 控制幀的 ping。
+Liveness 是應用層心跳，用來偵測 WebSocket 看似仍開啟、但應用層已無法正常回應的情況。它不是 WebSocket 控制幀的 ping。
 
-設定 `liveness` 後，Provider 會週期把應用層 ping 直接寫入已開啟的 socket。這些 ping 不走待送佇列。若在 `timeoutMs` 內沒有符合條件的 pong，Provider 會關閉 socket。當 `reconnectMs > 0` 時，這次關閉可能觸發重連。
+設定 `liveness` 後，Provider 會週期把應用層 ping 寫入已開啟的 socket。這些 ping 不走待送佇列。若在 `timeoutMs` 內沒有符合條件的 pong，Provider 會關閉 socket；當 `reconnectMs > 0` 時，這次關閉會走非主動斷線重連。
+
+無法 JSON 序列化或 ping 擲出時，該次不會送出，但仍會開始等 pong；一直沒有 pong 一樣會在 `timeoutMs` 後關線。
 
 `LivenessOptions`
 
@@ -339,7 +347,7 @@ Liveness 是可選的應用層心跳機制，用來偵測 WebSocket 看似仍開
 | ------------ | ---------------------------- | -------------------------------- |
 | `intervalMs` | `number`                     | ping 間隔，單位毫秒。            |
 | `timeoutMs`  | `number`                     | 等待 pong 的時間，單位毫秒。     |
-| `ping`       | `unknown \| (() => unknown)` | ping 內容。函式則每次呼叫一次。  |
+| `ping`       | `unknown \| (() => unknown)` | ping 內容。函式則每次呼叫一次。無法 JSON 序列化時略過該次送出，仍開始等 pong；逾時一樣關線。 |
 | `isPong`     | `(data: unknown) => boolean` | 判定 parse 後的資料是否為 pong。擲出視為不是 pong，該筆仍發 `"message"`。 |
 
 ```tsx
@@ -358,7 +366,7 @@ createWsContext({
 });
 ```
 
-進來的訊息會先經 `isPong` 判定。若為 pong 則清除逾時計時，並照常觸發 `"message"`。Provider 用 `JSON.stringify` 送出 ping，所以 ping 本體必須可轉成 JSON。
+pong 仍會觸發 `"message"`。若不要當業務訊息處理，在 handler 裡自行略過。
 
 ## 待送佇列
 

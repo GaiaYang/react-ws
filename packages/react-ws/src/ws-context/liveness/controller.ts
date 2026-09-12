@@ -25,7 +25,7 @@ export function createLivenessController(
   }
 
   function armTimeout(): void {
-    // 已在等 pong 就不要重設，否則 timeoutMs > intervalMs 時逾時永遠不到
+    // 已在等 pong 勿重設，否則 timeoutMs > intervalMs 時逾時永遠不到
     if (timeoutId != null) return;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return;
     timeoutId = setTimeout(() => {
@@ -45,14 +45,14 @@ export function createLivenessController(
     } catch {
       void 0;
     }
-    // 不論 ping 成敗都掛逾時，否則死線永遠偵測不到
+    // 不論 ping 成敗都掛逾時，否則死線偵測不到
     armTimeout();
   }
 
   return {
     start(sendPing) {
       sendPingRef = sendPing;
-      // setInterval 不會立刻跑；否則要等滿一個 interval 才有第一次 ping
+      // setInterval 不會立刻跑，需先 tick 一次
       tick();
       if (!Number.isFinite(intervalMs) || intervalMs < 0) return;
       intervalId = setInterval(tick, Math.min(intervalMs, MAX_TIMEOUT_MS));

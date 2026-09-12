@@ -24,7 +24,7 @@ export function createLiveness(options: LivenessOptions): Liveness {
   return {
     start(socket) {
       controller?.stop();
-      // 逾時不可關掉之後重連的新線
+      // 逾時只關這顆 socket，不可碰到之後重連的新線
       controller = createLivenessController(options, () => {
         if (socket.readyState === WebSocket.OPEN) socket.close();
       });
