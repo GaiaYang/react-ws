@@ -41,7 +41,7 @@ WebSocket ──→ Events ─────────────→ Event hand
            connect      status      message
            send         phase       open
            disconnect   reconnect   error
-                                  close
+                                    close
 ```
 
 - `useWsActions`：對 socket 做事情（`connect`／`send`／`disconnect`）
@@ -424,7 +424,7 @@ send() / sendJson()
 
 ## 事件
 
-### Message parsing
+### 訊息解析
 
 收到 `MessageEvent` 後先跑 `parse`：
 
@@ -503,7 +503,7 @@ handler 擲出時不向外冒泡。也不打斷連線層後續行為，例如改
 | `reconnectDelayMaxMs`  | `number`                                  | `30000`                     | 單次等待硬上限（毫秒），含抖動。`0` 不設上限。                                                |
 | `reconnectJitter`      | `number`                                  | `0.2`                       | 隨機縮短幅度 `[0, 1]`。預設實際等待為預定時間的 80% 到 100%。`1` 為 full jitter；`0` 不抖動。 |
 | `reconnectMinUptimeMs` | `number`                                  | `5000`                      | 維持多久才歸零重連週期（毫秒）。`0` 表示 `open` 即歸零。                                      |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | 見 [事件](#message-parsing) | 把原始 `MessageEvent.data` 轉成業務資料。擲出發 `"error"`，不發 `"message"`，不關線。         |
+| `parse`                | `(data: MessageEvent["data"]) => unknown` | 見 [事件](#訊息解析) | 把原始 `MessageEvent.data` 轉成業務資料。擲出發 `"error"`，不發 `"message"`，不關線。         |
 | `liveness`             | `LivenessOptions`                         | 無                          | 應用層心跳。省略則不啟用。                                                                    |
 
 `url`／`protocols` getter 必須同步，不可 `await` 或呼叫 hooks。
@@ -570,7 +570,7 @@ createWsContext({
 | ------------ | ---------------------------- | --------------------------------------------------------------------- |
 | `send`       | `(data) => boolean`          | 開啟時送出並回 `true`；未開啟回 `false`。詳見 [傳送訊息](#傳送訊息)。 |
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` 後 `send`。詳見 [傳送訊息](#傳送訊息)。              |
-| `connect`    | `() => void`                 | 取值後建構 socket。詳見 [重連](#重連)。                               |
+| `connect`    | `() => void`                 | 取值後建構 socket。詳見 [重連 → `connect()` 替換規則](#connect-替換規則)。 |
 | `disconnect` | `() => void`                 | 主動斷線。`phase: "idle"`、`status: "closed"`。不自動重連。           |
 | `getStatus`  | `() => WsStatus`             | 讀當下 `status`，不訂閱。                                             |
 

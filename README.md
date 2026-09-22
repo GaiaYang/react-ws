@@ -74,4 +74,4 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 ## License
 
-[MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments for zustand and nanoevents are in [`packages/react-ws/README.en.md#acknowledgments`](./packages/react-ws/README.en.md#acknowledgments).
+[MIT License](./LICENSE). Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang). Third-party acknowledgments for zustand and nanoevents are in [`packages/react-ws/README.en.md#sources-and-acknowledgments`](./packages/react-ws/README.en.md#sources-and-acknowledgments).

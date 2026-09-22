@@ -74,4 +74,4 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 
 ## 授權
 
-本 monorepo 以 [MIT License](./LICENSE) 釋出。Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang)。zustand 與 nanoevents 的借鑑出處見 [`packages/react-ws/README.zh-TW.md#借鑑與致謝`](./packages/react-ws/README.zh-TW.md#借鑑與致謝)。
+本 monorepo 以 [MIT License](./LICENSE) 釋出。Copyright (c) 2026 [GaiaYang](https://github.com/GaiaYang)。zustand 與 nanoevents 的借鑑出處見 [`packages/react-ws/README.zh-TW.md#來源與致謝`](./packages/react-ws/README.zh-TW.md#來源與致謝)。
