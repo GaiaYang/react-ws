@@ -17,9 +17,9 @@ WebSocket ──→ Events ─────────────→ Event hand
 
 ## 這是什麼
 
-這是連線層。它管理一條 WebSocket 的 lifecycle：連線、斷線、重連、liveness、連線狀態。
+這是連線層。它管理一條 WebSocket 的生命週期：連線、斷線、重連、liveness、連線狀態。
 
-不管訊息協定、訊息歷史、或 outgoing message queue。進來的訊息不在 `WsState`。請存在自己的 state 或 store。
+不管訊息協定、訊息歷史、或 outgoing message 佇列。進來的訊息不在 `WsState`。請存在自己的 state 或 store。
 
 ## 核心概念
 
@@ -45,8 +45,8 @@ WebSocket ──→ Events ─────────────→ Event hand
 ```
 
 - `useWsActions`：對 socket 做事情（`connect`／`send`／`disconnect`）
-- `useWsStore`：讀 connection state
-- `useWsEvents`：接收 WebSocket events
+- `useWsStore`：讀連線狀態
+- `useWsEvents`：接收 WebSocket 事件
 
 ### 一次 context 對應一條 WebSocket
 
@@ -54,7 +54,7 @@ WebSocket ──→ Events ─────────────→ Event hand
 
 ### 套件管理什麼
 
-- WebSocket lifecycle（掛載連線、卸載關線）
+- WebSocket 生命週期（掛載連線、卸載關線）
 - 連線狀態（`status`／`phase`）與重連進度欄位
 - 非主動斷線後的自動重連（退避、上限、抖動）
 - 應用層 liveness（可選）
@@ -63,8 +63,8 @@ WebSocket ──→ Events ─────────────→ Event hand
 ### 套件不管什麼
 
 - 訊息協定與業務 payload 語意
-- 訊息歷史（incoming messages 不在 `WsState`）
-- disconnected 時暫存 outgoing messages（`send`／`sendJson` 未開啟回 `false`，不暫存）
+- 訊息歷史（進來的訊息不在 `WsState`）
+- 斷線時暫存送出的訊息（`send`／`sendJson` 未開啟回 `false`，不暫存）
 - 驗證。token 由應用程式提供。
 
 ## 安裝
@@ -407,7 +407,7 @@ createWsContext({
 
 ## 傳送訊息
 
-套件不會在未開啟時暫存 outgoing messages。
+套件不會在未開啟時暫存送出的訊息。
 
 ```text
 send() / sendJson()
