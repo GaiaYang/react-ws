@@ -18,7 +18,8 @@ class MockWebSocket {
   onclose = null;
 
   constructor(url: string) {
-    if (!/^wss?:\/\//i.test(url)) throw new SyntaxError("invalid WebSocket url");
+    if (!/^wss?:\/\//i.test(url))
+      throw new SyntaxError("invalid WebSocket url");
     MockWebSocket.instances.push(this);
   }
 

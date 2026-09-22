@@ -16,6 +16,8 @@ export function createLivenessController(
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let sendPingRef: (() => void) | null = null;
+  // ping 可能同步 stop；進行中的 tick／start 不能再把 timer 掛回去
+  let stopped = false;
 
   function clearTimeoutTimer(): void {
     if (timeoutId != null) {
@@ -25,18 +27,22 @@ export function createLivenessController(
   }
 
   function armTimeout(): void {
+    if (stopped) return;
     // 已在等 pong 勿重設，否則 timeoutMs > intervalMs 時逾時永遠不到
     if (timeoutId != null) return;
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return;
-    timeoutId = setTimeout(() => {
-      timeoutId = null;
-      if (intervalId != null) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-      sendPingRef = null;
-      onTimeout();
-    }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    timeoutId = setTimeout(
+      () => {
+        timeoutId = null;
+        if (intervalId != null) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        sendPingRef = null;
+        onTimeout();
+      },
+      Math.min(timeoutMs, MAX_TIMEOUT_MS),
+    );
   }
 
   function tick(): void {
@@ -51,14 +57,15 @@ export function createLivenessController(
 
   return {
     start(sendPing) {
+      stopped = false;
       sendPingRef = sendPing;
       // setInterval 不會立刻跑，需先 tick 一次
       tick();
-      if (!Number.isFinite(intervalMs) || intervalMs < 0) return;
+      if (stopped || !Number.isFinite(intervalMs) || intervalMs < 0) return;
       intervalId = setInterval(tick, Math.min(intervalMs, MAX_TIMEOUT_MS));
     },
-
     stop() {
+      stopped = true;
       if (intervalId != null) {
         clearInterval(intervalId);
         intervalId = null;
@@ -66,7 +73,6 @@ export function createLivenessController(
       clearTimeoutTimer();
       sendPingRef = null;
     },
-
     onMessage(data) {
       try {
         if (isPong(data)) clearTimeoutTimer();

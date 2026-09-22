@@ -57,12 +57,23 @@ export interface ReconnectPatch {
 }
 
 export interface Reconnect {
-  /** `true` 表示來自重連計時器；此時不可歸零 attempt */
+  /**
+   * `true` 只表示重連計時器已經觸發。
+   *
+   * 等待中的手動 `connect()` 回 `false`（phase 用），attempt 仍不歸零。
+   */
   onConnectBegin: () => boolean;
   onOpen: () => void;
   scheduleAfterClose: () => boolean;
   /** 計時器已觸發、這次排程已消耗，但不是使用者主動放棄 */
   clearTimerTrigger: () => boolean;
+  /**
+   * 建構失敗時。
+   * - 計時器已觸發 → 停自動重試
+   * - 仍在等待 → 取消倒數並再排下一次（提前試失敗仍繼續這一輪）
+   * - 否則不動
+   */
+  onConstructFailure: () => "stopped" | "reconnecting" | "noop";
   cancel: () => void;
   bindOnReconnect: (fn: () => void) => void;
 }
@@ -98,14 +109,44 @@ export function createReconnect(
     apply({ reconnectAttempt: 0, reconnectExhausted: false });
   };
 
+  const schedule = (): boolean => {
+    // 沒撐滿 minUptime：清掉待跑的歸零，讓退避沿用本輪計數
+    clearUptimeTimer();
+    if (
+      intentionalClose ||
+      !Number.isFinite(options.reconnectMs) ||
+      options.reconnectMs <= 0
+    ) {
+      return false;
+    }
+    if (options.reconnectMax > 0 && attempt >= options.reconnectMax) {
+      apply({ reconnectExhausted: true });
+      return false;
+    }
+    attempt += 1;
+    fromTimer = true;
+    const delay = reconnectDelay(attempt, options);
+    apply({
+      reconnectAttempt: attempt,
+      nextReconnectAt: Date.now() + delay,
+    });
+    timer = setTimeout(() => {
+      timer = null;
+      onReconnect();
+    }, delay);
+    return true;
+  };
+
   return {
     onConnectBegin() {
+      // clearTimer 之後分不出「還在等」和「已經觸發」
+      const fired = fromTimer && timer == null;
+      const inCycle = fromTimer;
       clearTimer();
       clearUptimeTimer();
       intentionalClose = false;
-      const reconnecting = fromTimer;
       fromTimer = false;
-      if (reconnecting) {
+      if (inCycle) {
         apply({ nextReconnectAt: 0 });
       } else {
         attempt = 0;
@@ -115,9 +156,8 @@ export function createReconnect(
           reconnectExhausted: false,
         });
       }
-      return reconnecting;
+      return fired;
     },
-
     onOpen() {
       const minUptime = options.reconnectMinUptimeMs ?? 0;
       // NaN 會讓 setTimeout 立刻觸發，短命連線保護就沒了
@@ -134,35 +174,7 @@ export function createReconnect(
         Math.min(minUptime, MAX_TIMEOUT_MS),
       );
     },
-
-    scheduleAfterClose() {
-      // 沒撐滿 minUptime：清掉待跑的歸零，讓退避沿用本輪計數
-      clearUptimeTimer();
-      if (
-        intentionalClose ||
-        !Number.isFinite(options.reconnectMs) ||
-        options.reconnectMs <= 0
-      ) {
-        return false;
-      }
-      if (options.reconnectMax > 0 && attempt >= options.reconnectMax) {
-        apply({ reconnectExhausted: true });
-        return false;
-      }
-      attempt += 1;
-      fromTimer = true;
-      const delay = reconnectDelay(attempt, options);
-      apply({
-        reconnectAttempt: attempt,
-        nextReconnectAt: Date.now() + delay,
-      });
-      timer = setTimeout(() => {
-        timer = null;
-        onReconnect();
-      }, delay);
-      return true;
-    },
-
+    scheduleAfterClose: schedule,
     clearTimerTrigger() {
       if (!fromTimer || timer != null) return false;
       fromTimer = false;
@@ -170,7 +182,21 @@ export function createReconnect(
       apply({ nextReconnectAt: 0 });
       return true;
     },
-
+    onConstructFailure() {
+      if (fromTimer && timer == null) {
+        fromTimer = false;
+        apply({ nextReconnectAt: 0 });
+        return "stopped";
+      }
+      if (fromTimer && timer != null) {
+        clearTimer();
+        if (schedule()) return "reconnecting";
+        fromTimer = false;
+        apply({ nextReconnectAt: 0 });
+        return "stopped";
+      }
+      return "noop";
+    },
     cancel() {
       intentionalClose = true;
       fromTimer = false;
@@ -183,7 +209,6 @@ export function createReconnect(
         reconnectExhausted: false,
       });
     },
-
     bindOnReconnect(fn) {
       onReconnect = fn;
     },

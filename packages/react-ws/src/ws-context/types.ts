@@ -86,10 +86,16 @@ export interface WsContextValue {
   /**
    * 僅在連線開啟時送出。未開啟回傳 `false`，不暫存。
    *
+   * 已開啟時直接呼叫 `WebSocket.send`；其擲出不會改成 `false`，會往外傳。
+   *
    * @returns 已送出為 `true`；未開啟為 `false`
    */
   send: (data: Parameters<WebSocket["send"]>[0]) => boolean;
-  /** `JSON.stringify` 後呼叫 `send`。無法序列化時回傳 `false`。 */
+  /**
+   * `JSON.stringify` 後呼叫 `send`。無法序列化時回傳 `false`。
+   *
+   * 序列化成功後的送出行為同 `send`（含 `WebSocket.send` 擲出）。
+   */
   sendJson: (data: unknown) => boolean;
   /**
    * 取值後建構 socket；成功才關閉舊線。本身不 throw。
@@ -97,6 +103,8 @@ export interface WsContextValue {
    * 握手失敗發 `"error"` 並保留既有連線。
    *
    * 若來自已觸發的重連計時器：進入 `closed`／`stopped`，停止自動重試。
+   *
+   * 若仍在等待重連：取消該次倒數並再排下一次（提前試失敗仍繼續這一輪）。
    */
   connect: () => void;
   /** 主動斷線；不自動重連。 */

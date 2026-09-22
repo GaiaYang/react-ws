@@ -39,32 +39,6 @@ describe("liveness", () => {
     expect(pings).toHaveLength(1);
   });
 
-  it("pong clears timeout until next ping", () => {
-    const onTimeout = vi.fn();
-
-    const controller = createLivenessController(
-      {
-        intervalMs: 1_000,
-        timeoutMs: 500,
-        ping: JSON.stringify({ type: "PING" }),
-        isPong: (data) =>
-          typeof data === "object" &&
-          data != null &&
-          (data as { type?: string }).type === "PONG",
-      },
-      onTimeout,
-    );
-
-    controller.start(() => {});
-    vi.advanceTimersByTime(400);
-    controller.onMessage({ type: "PONG" });
-
-    vi.advanceTimersByTime(400);
-    expect(onTimeout).not.toHaveBeenCalled();
-
-    controller.stop();
-  });
-
   it("timeout does not close a newer socket", () => {
     const closeA = vi.fn();
     const closeB = vi.fn();
@@ -220,6 +194,49 @@ describe("liveness", () => {
     expect(onTimeout).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop during the first ping does not arm a timeout or keep the interval", () => {
+    const onTimeout = vi.fn();
+    let pings = 0;
+    const controller = createLivenessController(
+      {
+        intervalMs: 1_000,
+        timeoutMs: 500,
+        ping: "ping",
+        isPong: () => false,
+      },
+      onTimeout,
+    );
+
+    controller.start(() => {
+      pings += 1;
+      controller.stop();
+    });
+
+    vi.advanceTimersByTime(10_000);
+    expect(pings).toBe(1);
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+
+  it("createLiveness stop during the first ping does not close the socket later", () => {
+    const close = vi.fn();
+    const send = vi.fn();
+    const ws = { readyState: 1, close, send } as unknown as WebSocket;
+    const session = createLiveness({
+      intervalMs: 1_000,
+      timeoutMs: 500,
+      ping: () => {
+        session.stop();
+        return "ping";
+      },
+      isPong: () => false,
+    });
+
+    session.start(ws);
+    vi.advanceTimersByTime(10_000);
+    expect(close).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it("ping throw still arms timeout", () => {

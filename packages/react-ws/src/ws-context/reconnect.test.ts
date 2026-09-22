@@ -132,7 +132,10 @@ describe("reconnect", () => {
     const onReconnect = vi.fn();
     for (const reconnectMs of [Number.NaN, Number.POSITIVE_INFINITY]) {
       const { apply } = createApply();
-      const reconnect = createReconnect({ reconnectMs, reconnectMax: 0 }, apply);
+      const reconnect = createReconnect(
+        { reconnectMs, reconnectMax: 0 },
+        apply,
+      );
       reconnect.bindOnReconnect(onReconnect);
       expect(reconnect.scheduleAfterClose()).toBe(false);
     }
@@ -187,16 +190,149 @@ describe("reconnect", () => {
     expect(refs.attempt).toBe(0);
   });
 
-  it("reconnectMs 0 disables scheduling", () => {
+  it("manual connect while the timer is pending is not a fired timer and keeps the attempt", () => {
+    const { refs, apply } = createApply();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 0 },
+      apply,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    expect(refs.attempt).toBe(1);
+
+    // 計時器還在倒數：手動 connect 不是計時器觸發，attempt 留在這一輪
+    expect(reconnect.onConnectBegin()).toBe(false);
+    expect(refs.attempt).toBe(1);
+    expect(refs.nextAt).toBe(0);
+
+    vi.advanceTimersByTime(1_000);
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
+  it("construct failure while waiting cancels the timer and schedules the next wait", () => {
+    const { refs, apply } = createApply();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(
+      {
+        reconnectMs: 100,
+        reconnectMax: 0,
+        reconnectBackoff: 1,
+        reconnectJitter: 0,
+      },
+      apply,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    expect(refs.attempt).toBe(1);
+
+    expect(reconnect.onConstructFailure()).toBe("reconnecting");
+    expect(refs.attempt).toBe(2);
+    expect(refs.nextAt).toBeGreaterThan(Date.now());
+
+    vi.advanceTimersByTime(99);
+    expect(onReconnect).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("construct failure while waiting stops when reconnectMax is already reached", () => {
+    const { refs, apply } = createApply();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(
+      {
+        reconnectMs: 100,
+        reconnectMax: 1,
+        reconnectBackoff: 1,
+        reconnectJitter: 0,
+      },
+      apply,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    expect(refs.attempt).toBe(1);
+
+    expect(reconnect.onConstructFailure()).toBe("stopped");
+    expect(refs.exhausted).toBe(true);
+    expect(refs.nextAt).toBe(0);
+
+    vi.advanceTimersByTime(1_000);
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
+  it("construct failure after the timer fired is stopped", () => {
+    const { refs, apply } = createApply();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 0 },
+      apply,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    vi.advanceTimersByTime(100);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    expect(reconnect.onConstructFailure()).toBe("stopped");
+    expect(refs.nextAt).toBe(0);
+  });
+
+  it("construct failure outside a reconnect cycle is a no-op", () => {
+    const { refs, apply } = createApply();
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 0 },
+      apply,
+    );
+    reconnect.bindOnReconnect(vi.fn());
+
+    expect(reconnect.onConstructFailure()).toBe("noop");
+    expect(refs.attempt).toBe(0);
+    expect(refs.nextAt).toBe(0);
+  });
+
+  it("cancel drops a pending reconnect timer", () => {
     const { apply } = createApply();
+    const onReconnect = vi.fn();
+
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 0 },
+      apply,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    reconnect.cancel();
+
+    vi.advanceTimersByTime(1_000);
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
+  it("reconnectMs 0 disables scheduling", () => {
+    const { refs, apply } = createApply();
+    const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
       { reconnectMs: 0, reconnectMax: 5 },
       apply,
     );
-    reconnect.bindOnReconnect(vi.fn());
+    reconnect.bindOnReconnect(onReconnect);
 
     expect(reconnect.scheduleAfterClose()).toBe(false);
+    expect(refs.attempt).toBe(0);
+
+    vi.advanceTimersByTime(1_000);
+    expect(onReconnect).not.toHaveBeenCalled();
   });
 
   it("waits with exponential backoff, capped by reconnectDelayMaxMs", () => {
@@ -286,6 +422,9 @@ describe("reconnect", () => {
     expect(refs.attempt).toBe(1);
 
     vi.advanceTimersByTime(1);
+    expect(refs.attempt).toBe(1);
+    // 預設 5000 的歸零計時器若被排上，這裡 attempt 會變 0
+    vi.advanceTimersByTime(5000);
     expect(refs.attempt).toBe(1);
   });
 });

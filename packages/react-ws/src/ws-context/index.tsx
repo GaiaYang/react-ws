@@ -142,8 +142,11 @@ export function createWsContext(options: CreateWsContextOptions) {
             : new WebSocket(resolvedUrl, resolvedProtocols);
       } catch {
         // 先 store 再 emit，避免 handler 擲出／disconnect 卡住停重試
-        if (reconnect.clearTimerTrigger()) {
+        const outcome = reconnect.onConstructFailure();
+        if (outcome === "stopped") {
           store.setState({ status: "closed", phase: "stopped" });
+        } else if (outcome === "reconnecting") {
+          store.setState({ status: "closed", phase: "reconnecting" });
         }
         emitSafe(emitter, "error", { type: "error" } as Event);
         return;
@@ -178,6 +181,8 @@ export function createWsContext(options: CreateWsContextOptions) {
         reconnect.onOpen();
         store.setState({ status: "open", phase: "open" });
         livenessSession.start(ws);
+        // ping 可能同步 disconnect／connect，這次握手已不是現役
+        if (wsRef.current !== ws) return;
         emitSafe(emitter, "open", event);
       };
 

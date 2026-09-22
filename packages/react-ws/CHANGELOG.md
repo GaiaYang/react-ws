@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-23
+
+### Fixed
+
+- Manual `connect()` while a reconnect wait is still pending sets `phase: "connecting"` (not `"reconnecting"`); `reconnectAttempt` stays in the current cycle
+- Construct failure while that wait is still pending cancels the timer and schedules the next wait instead of leaving the old countdown running; hitting `reconnectMax` still stops
+- Liveness: if the first `ping` re-enters `disconnect()` / `connect()`, the abandoned handshake does not emit `"open"`, and stopped controllers do not re-arm timers
+
+### Changed
+
+- Docs (EN / zh-TW): clarify manual `connect()` during a pending reconnect wait, construct-failure reschedule, and liveness re-entry; `send` / `sendJson` document that an open-socket `WebSocket.send` throw propagates; `useWsEvents` notes that a throwing handler may skip later handlers in the same emit
+
 ## [0.7.0] - 2026-09-12
 
 ### Breaking
