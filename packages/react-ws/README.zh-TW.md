@@ -593,9 +593,9 @@ useWsStore<T>(selector: (state: WsState) => T): T
 
 不帶 selector 時訂閱整份 `WsState`。建議帶 selector。
 
-selector 回傳值以 `Object.is` 與前次結果比較。相等則不因 store 其他欄位變更而重繪。
+請回傳基本型別，或每次都是同一個參照。結果用 `Object.is` 與前次比較；相同就不因其他欄位變更而重繪。
 
-每次回傳新的物件或陣列會不相等，仍會重繪。
+每次回傳新的物件或陣列會讓 React 重複更新，元件可能當掉。套件不做淺比較。
 
 進來的訊息不在此 store。
 

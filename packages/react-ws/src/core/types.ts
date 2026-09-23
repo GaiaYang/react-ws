@@ -14,6 +14,8 @@ export interface CreateWsContextOptions {
    * WebSocket URL。
    *
    * getter 須同步（不可 `await`、不可呼叫 hooks）。
+   *
+   * 空字串視為建構失敗：發 `"error"`，保留既有連線，不 throw。
    */
   url: MaybeGetter<string>;
   /**
@@ -53,7 +55,7 @@ export interface CreateWsContextOptions {
    */
   reconnectBackoff?: number;
   /**
-   * 單次等待硬上限（毫秒），含抖動。
+   * 單次等待硬上限（毫秒）。先套上限，再向下抖動。
    *
    * `0` 不設上限。
    *
@@ -63,7 +65,7 @@ export interface CreateWsContextOptions {
   /**
    * 將每次等待隨機縮短的幅度，取值 `[0, 1]`。
    *
-   * `0` 不抖動；`1` 為 full jitter。
+   * `0` 不抖動；`1` 可把延遲縮到接近 0。
    *
    * @default 0.2
    */
@@ -71,7 +73,7 @@ export interface CreateWsContextOptions {
   /**
    * 連線需維持多久（毫秒）才歸零重連週期。
    *
-   * `0` 表示 `open` 即歸零；短命連線會讓退避與 `reconnectMax` 停在第一階。
+   * `0` 表示 `open` 即歸零；短命連線下次重連仍從第一次等待起算，`reconnectMax` 也不易累加。
    *
    * @default 5000
    */
@@ -81,13 +83,13 @@ export interface CreateWsContextOptions {
    *
    * 擲出時發 `"error"`，不發 `"message"`，不關線。
    *
-   * 未提供時：字串嘗試 `JSON.parse`（失敗則原樣）；非字串原樣回傳。
+   * @default 字串嘗試 JSON.parse（失敗則原樣）；非字串原樣回傳
    */
   parse?: (data: MessageEvent["data"]) => unknown;
   /**
-   * 應用層心跳。
+   * 應用層心跳（非 WebSocket 控制幀）。
    *
-   * 省略則不啟用。
+   * 省略則不啟用。需自備 `ping` 與 `isPong`；套件不序列化 ping。
    */
   liveness?: LivenessOptions;
 }
@@ -138,8 +140,9 @@ export interface WsContextValue {
    *
    * 本身不 throw。握手失敗發 `"error"` 並保留既有連線。
    *
-   * 若來自已觸發的重連計時器：進入 `closed`／`stopped`，停止自動重試。
-   * 若仍在等待重連：取消該次倒數並再排下一次（提前試失敗仍繼續這一輪）。
+   * 握手失敗且重連計時器已觸發時：進入 `closed` 與 `stopped`，停止自動重試。
+   *
+   * 握手失敗且仍在等待重連時：取消該次倒數並再排下一次，提前試失敗仍繼續這一輪。
    */
   connect: () => void;
   /** 主動斷線；不自動重連。 */

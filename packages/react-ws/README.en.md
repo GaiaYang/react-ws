@@ -593,9 +593,9 @@ This hook uses `useSyncExternalStore`.
 
 Without a selector it subscribes to the whole `WsState`. Prefer a selector.
 
-The selector result is compared with `Object.is` to the previous result. If equal, other store field changes do not re-render this component.
+Return a primitive, or the same reference each time. Results are compared with `Object.is`. Matching values skip re-renders when other fields change.
 
-A new object or array each time is never equal, so the component still re-renders.
+A new object or array on every call makes React update in a loop and can hang the component. This package does not shallow-compare.
 
 Incoming messages are not in this store.
 
