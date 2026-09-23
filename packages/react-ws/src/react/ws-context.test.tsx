@@ -1,7 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWsContext } from "./index";
+import { createWsContext } from "./create-ws-context";
 
 type WsListener = ((ev: Event) => void) | null;
 

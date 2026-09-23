@@ -2,8 +2,8 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWsContext } from "./index";
-import { clientCloseEvent } from "./socket";
+import { createWsContext } from "./create-ws-context";
+import { clientCloseEvent } from "../core/socket";
 
 class MockWebSocket {
   static CONNECTING = 0;

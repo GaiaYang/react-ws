@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   createLivenessController,
   type LivenessController,
@@ -48,9 +47,8 @@ export function createLiveness(options: LivenessOptions): Liveness {
   };
 }
 
-export function useLiveness(options: LivenessOptions | undefined): Liveness {
-  const [session] = useState(() =>
-    options ? createLiveness(options) : DISABLED_LIVENESS,
-  );
-  return session;
+export function resolveLiveness(
+  options: LivenessOptions | undefined,
+): Liveness {
+  return options ? createLiveness(options) : DISABLED_LIVENESS;
 }

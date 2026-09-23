@@ -6,7 +6,7 @@
 // Modifications: 內嵌以達成零 runtime 依賴。
 
 import { useSyncExternalStore } from "react";
-import type { StoreApi } from "./store";
+import type { StoreApi } from "../core/store";
 
 export function useStore<State, Selected>(
   store: StoreApi<State>,

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { MAX_TIMEOUT_MS } from "./socket";
 
 /** 欄位語意見 `CreateWsContextOptions`；退避預設由 `createWsContext` 帶入。 */
@@ -213,12 +212,4 @@ export function createReconnect(
       onReconnect = fn;
     },
   };
-}
-
-export function useReconnect(
-  options: ReconnectOptions,
-  apply: (patch: ReconnectPatch) => void,
-): Reconnect {
-  const [session] = useState(() => createReconnect(options, apply));
-  return session;
 }

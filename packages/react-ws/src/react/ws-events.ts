@@ -3,21 +3,15 @@ import {
   useContext,
   useEffect,
   useRef,
-  useState,
   type Context,
 } from "react";
-import { createEmitter, type Emitter } from "./emitter";
-import type { WsEvents } from "./types";
+import type { WsEventsEmitter } from "../core/session";
+import type { WsEvents } from "../core/types";
 
-export type WsEventsEmitter = Emitter<WsEvents>;
+export type { WsEventsEmitter } from "../core/session";
 
 export function createWsEventsContext() {
   return createContext<WsEventsEmitter | null>(null);
-}
-
-export function useWsEventsApi(): WsEventsEmitter {
-  const [emitter] = useState(() => createEmitter<WsEvents>());
-  return emitter;
 }
 
 export function createUseWsEvents(EventsCtx: Context<WsEventsEmitter | null>) {
