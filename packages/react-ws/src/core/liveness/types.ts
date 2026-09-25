@@ -1,9 +1,9 @@
-import type { MaybeGetter } from "../types";
+import type { MaybeGetter } from "../maybe-getter";
 
 /**
- * 應用層心跳（非 WebSocket 控制幀）。
+ * 應用層心跳選項
  *
- * 省略則不啟用。ping 內容由呼叫端自行準備，套件不序列化。
+ * 省略則不啟用。內容由呼叫端自行準備，套件不序列化。
  */
 export interface LivenessOptions {
   /** ping 間隔（毫秒） */

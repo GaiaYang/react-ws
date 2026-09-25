@@ -1,3 +1,4 @@
+import type { ReconnectState } from "./reconnect";
 import { createStore, type StoreApi } from "./store";
 
 /**
@@ -22,37 +23,20 @@ export type WsStatus = "idle" | "connecting" | "open" | "closed";
 export type WsPhase =
   "idle" | "connecting" | "open" | "reconnecting" | "stopped";
 
-/** 可訂閱的連線層 state。不含訊息 payload（請用事件）。 */
-export interface WsState {
+/** 可訂閱的連線層 state */
+export interface WsState extends ReconnectState {
   /** WebSocket 連線狀態。 */
   status: WsStatus;
   /** 連線階段 */
   phase: WsPhase;
-  /**
-   * 本輪已排程的自動重連次數（決定重試時 +1，不是連上才 +1）。
-   *
-   * 撐滿 `reconnectMinUptimeMs` 才歸零；等待重連計時器時的手動 `connect()` 不算新一輪。
-   */
-  reconnectAttempt: number;
-  /**
-   * 已達 `reconnectMax` 且最後一次也失敗。
-   *
-   * 之後的 `connect()`／`disconnect()` 清回 `false`。
-   */
-  reconnectExhausted: boolean;
-  /** 下次自動重連到期時間（`Date.now()` 毫秒）。未在等待時為 `0`。 */
-  nextReconnectAt: number;
 }
 
 export type WsStoreApi = StoreApi<WsState>;
 
-export function createWsStore(init: WsStatus = "idle"): WsStoreApi {
-  // closed 可能對應 idle 或 stopped；只給 status 時無法獨推 phase
-  const phase: WsPhase =
-    init === "open" || init === "idle" ? init : "connecting";
+export function createWsStore(): WsStoreApi {
   return createStore<WsState>({
-    status: init,
-    phase,
+    status: "idle",
+    phase: "idle",
     reconnectAttempt: 0,
     reconnectExhausted: false,
     nextReconnectAt: 0,

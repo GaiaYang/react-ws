@@ -1,21 +1,110 @@
 import { createEmitter, type Emitter } from "./emitter";
 import { resolveLiveness } from "./liveness/liveness";
-import { createReconnect, type ReconnectOptions } from "./reconnect";
+import type { LivenessOptions } from "./liveness/types";
+import { resolveMaybeGetter, type MaybeGetter } from "./maybe-getter";
+import {
+  createReconnect,
+  resolveReconnectOptions,
+  type ReconnectOptions,
+} from "./reconnect";
 import { clientCloseEvent, detachAndClose, stringifyJson } from "./socket";
-import type {
-  CreateWsContextOptions,
-  MaybeGetter,
-  WsContextValue,
-  WsEvents,
-} from "./types";
-import { createWsStore, type WsStoreApi } from "./ws-state";
+import { createWsStore, type WsStatus, type WsStoreApi } from "./ws-state";
+
+/** 一條連線的選項 */
+export interface WsSessionOptions extends ReconnectOptions {
+  /**
+   * WebSocket URL。
+   *
+   * getter 須同步（不可 `await`、不可呼叫 hooks）。
+   *
+   * 空字串視為建構失敗：發 `"error"`，保留既有連線，不 throw。
+   */
+  url: MaybeGetter<string>;
+  /**
+   * 傳給 `new WebSocket` 的第二參數。
+   *
+   * 省略則不傳。getter 回傳空字串會原樣傳入，不會改成省略。
+   */
+  protocols?: MaybeGetter<string | string[]>;
+  /**
+   * 將 `MessageEvent.data` 轉成業務資料。
+   *
+   * 擲出時發 `"error"`，不發 `"message"`，不關線。
+   *
+   * 預設行為：字串嘗試 `JSON.parse`；解析失敗或者非字串則原樣回傳
+   */
+  parse?: (data: MessageEvent["data"]) => unknown;
+  /**
+   * 應用層心跳選項，省略則不啟用。
+   *
+   * @default undefined
+   */
+  liveness?: LivenessOptions;
+}
+
+/** `useWsEvents` 可訂閱的事件。 */
+export interface WsEvents {
+  /**
+   * 收到訊息。
+   *
+   * @param parsed `parse` 後的資料。`parse` 擲出時改發 `"error"`，不發 `"message"`，不關線。
+   * @param event 這次的 `MessageEvent`。
+   */
+  message: (parsed: unknown, event: MessageEvent) => void;
+  /** 連線建立。 */
+  open: (event: Event) => void;
+  /**
+   * 連線錯誤。
+   *
+   * 來自 socket，或來自握手失敗、`url`／`protocols` 取值失敗、`parse` 擲出。後三者的參數是 `{ type: "error" }`，不是 `Error`。
+   */
+  error: (event: Event) => void;
+  /**
+   * 連線關閉。
+   *
+   * 也包含 `disconnect()`、Provider 卸載，以及成功換掉舊連線。有 socket 時才會收到；`reason` 分別是 `"client disconnect"`、`"provider unmount"`、`"reconnect"`。
+   */
+  close: (event: CloseEvent) => void;
+}
 
 export type WsEventsEmitter = Emitter<WsEvents>;
+
+/** `useWsActions()` 回傳值。連線狀態請用 `useWsStore`。 */
+export interface WsContextValue {
+  /**
+   * 僅在連線開啟時送出。
+   *
+   * 未開啟回傳 `false`，不暫存。已開啟時直接呼叫 `WebSocket.send`；其擲出不會改成 `false`，會往外傳。
+   *
+   * @returns 已送出為 `true`；未開啟為 `false`
+   */
+  send: (data: Parameters<WebSocket["send"]>[0]) => boolean;
+  /**
+   * `JSON.stringify` 後呼叫 `send`。
+   *
+   * 無法序列化時回傳 `false`。序列化成功後的送出行為同 `send`（含 `WebSocket.send` 擲出）。
+   */
+  sendJson: (data: unknown) => boolean;
+  /**
+   * 取值後建構 socket；成功才關閉舊線。
+   *
+   * 本身不 throw。握手失敗發 `"error"` 並保留既有連線。
+   *
+   * 握手失敗且重連計時器已觸發時：進入 `closed` 與 `stopped`，停止自動重試。
+   *
+   * 握手失敗且仍在等待重連時：取消該次倒數並再排下一次，提前試失敗仍繼續這一輪。
+   */
+  connect: () => void;
+  /** 主動斷線；不自動重連。 */
+  disconnect: () => void;
+  /** 讀取當下 `status`，不訂閱。 */
+  getStatus: () => WsStatus;
+}
 
 export interface WsSession extends WsContextValue {
   store: WsStoreApi;
   emitter: WsEventsEmitter;
-  /** `disconnect` 與宿主 unmount 共用，避免兩處漏清 timer */
+  /** `disconnect` 與 Provider 卸載共用，避免兩處漏清 timer */
   teardown: (reason: string) => void;
 }
 
@@ -26,10 +115,6 @@ function defaultParse(data: MessageEvent["data"]): unknown {
   } catch {
     return data;
   }
-}
-
-function resolveMaybeGetter<T>(value: MaybeGetter<T>): T {
-  return typeof value === "function" ? (value as () => T)() : value;
 }
 
 /** handler 擲出不可打斷改用新 socket／liveness */
@@ -47,39 +132,29 @@ function emitSafe<E extends keyof WsEvents>(
 
 /**
  * 純 JS 連線 session：擁有一條 WebSocket 的生命週期。
- * React 或其他宿主只負責建立、掛載時 `connect`、卸載時 `teardown`。
+ *
+ * React 或其他框架只負責建立、掛載時 `connect`、卸載時 `teardown`。
  */
-export function createWsSession(options: CreateWsContextOptions): WsSession {
+export function createWsSession(options: WsSessionOptions): WsSession {
   const {
     url,
     protocols,
-    reconnectMs = 0,
-    reconnectMax = 0,
-    reconnectBackoff = 2,
-    reconnectDelayMaxMs = 30_000,
-    reconnectJitter = 0.2,
-    reconnectMinUptimeMs = 5000,
     parse = defaultParse,
     liveness: livenessOptions,
   } = options;
 
   const store = createWsStore();
   const emitter = createEmitter<WsEvents>();
-  const reconnectOptions: ReconnectOptions = {
-    reconnectMs,
-    reconnectMax,
-    reconnectBackoff,
-    reconnectDelayMaxMs,
-    reconnectJitter,
-    reconnectMinUptimeMs,
-  };
-  const reconnect = createReconnect(reconnectOptions, store.setState);
+  const reconnect = createReconnect(
+    resolveReconnectOptions(options),
+    store.setState,
+  );
   const liveness = resolveLiveness(livenessOptions);
 
   let wsCurrent: WebSocket | null = null;
   let connectGeneration = 0;
 
-  function getStatus(): ReturnType<WsContextValue["getStatus"]> {
+  function getStatus(): WsStatus {
     return store.getState().status;
   }
 
@@ -125,10 +200,15 @@ export function createWsSession(options: CreateWsContextOptions): WsSession {
     } catch {
       // 先 store 再 emit，避免 handler 擲出／disconnect 卡住停重試
       const outcome = reconnect.onConstructFailure();
-      if (outcome === "stopped") {
-        store.setState({ status: "closed", phase: "stopped" });
-      } else if (outcome === "reconnecting") {
-        store.setState({ status: "closed", phase: "reconnecting" });
+      switch (outcome) {
+        case "stopped":
+          store.setState({ status: "closed", phase: "stopped" });
+          break;
+        case "reconnecting":
+          store.setState({ status: "closed", phase: "reconnecting" });
+          break;
+        default:
+          break;
       }
       emitSafe(emitter, "error", { type: "error" } as Event);
       return;

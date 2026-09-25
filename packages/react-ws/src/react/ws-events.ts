@@ -5,10 +5,7 @@ import {
   useRef,
   type Context,
 } from "react";
-import type { WsEventsEmitter } from "../core/session";
-import type { WsEvents } from "../core/types";
-
-export type { WsEventsEmitter } from "../core/session";
+import type { WsEvents, WsEventsEmitter } from "../core/session";
 
 export function createWsEventsContext() {
   return createContext<WsEventsEmitter | null>(null);

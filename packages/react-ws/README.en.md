@@ -570,7 +570,7 @@ Method references are stable. A component that only calls it does not re-render 
 | ------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `send`       | `(data) => boolean`          | When open, sends and returns `true`. When not open, returns `false`. See [Sending messages](#sending-messages). |
 | `sendJson`   | `(data: unknown) => boolean` | `JSON.stringify` then `send`. See [Sending messages](#sending-messages).                                        |
-| `connect`    | `() => void`                 | Resolves options and constructs the socket. See [Reconnect → `connect()` replacement](#connect-replacement). |
+| `connect`    | `() => void`                 | Resolves options and constructs the socket. See [Reconnect → `connect()` replacement](#connect-replacement).    |
 | `disconnect` | `() => void`                 | Intentional close. `phase: "idle"`, `status: "closed"`. No auto-reconnect.                                      |
 | `getStatus`  | `() => WsStatus`             | Reads current `status` without a subscription.                                                                  |
 

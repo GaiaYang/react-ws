@@ -1,5 +1,5 @@
 import { createContext, useContext, type Context } from "react";
-import type { WsContextValue } from "../core/types";
+import type { WsContextValue } from "../core/session";
 
 export function createWsActionsContext() {
   return createContext<WsContextValue | null>(null);

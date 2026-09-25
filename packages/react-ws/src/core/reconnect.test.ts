@@ -1,9 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createReconnect,
-  reconnectDelay,
+  createReconnect as createReconnectWith,
+  reconnectDelay as reconnectDelayWith,
+  type ReconnectOptions,
   type ReconnectPatch,
 } from "./reconnect";
+
+/** 直接呼叫時補齊欄位，數值沿用這支函式以前的缺欄結果。產品預設由 session 測試鎖。 */
+function reconnectOptions(patch: ReconnectOptions): Required<ReconnectOptions> {
+  return {
+    reconnectMs: 0,
+    reconnectMax: 0,
+    reconnectBackoff: 1,
+    reconnectDelayMaxMs: 0,
+    reconnectJitter: 0,
+    reconnectMinUptimeMs: 0,
+    ...patch,
+  };
+}
+
+function createReconnect(
+  options: ReconnectOptions,
+  apply: (patch: ReconnectPatch) => void,
+) {
+  return createReconnectWith(reconnectOptions(options), apply);
+}
+
+function reconnectDelay(attempt: number, options: ReconnectOptions): number {
+  return reconnectDelayWith(attempt, reconnectOptions(options));
+}
 
 function createApply() {
   let attempt = 0;
@@ -432,12 +457,6 @@ describe("reconnect", () => {
 describe("reconnectDelay", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it("defaults to a fixed interval", () => {
-    const options = { reconnectMs: 100, reconnectMax: 0 };
-    expect(reconnectDelay(1, options)).toBe(100);
-    expect(reconnectDelay(5, options)).toBe(100);
   });
 
   it("jitters downward from the backoff result", () => {

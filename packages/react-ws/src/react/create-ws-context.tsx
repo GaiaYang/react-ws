@@ -1,12 +1,29 @@
 import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
-import { createWsSession } from "../core/session";
-import type { CreateWsContextOptions, WsContextValue } from "../core/types";
+import {
+  createWsSession,
+  type WsContextValue,
+  type WsSessionOptions,
+} from "../core/session";
 import { createUseWsEvents, createWsEventsContext } from "./ws-events";
 import { createUseWsStore, createWsStoreContext } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
 
+/**
+ * `createWsContext` 選項。
+ *
+ * 建立後固定，`url`／`protocols` 若為 getter，每次 `connect()` 開頭同步取值。
+ */
+export interface CreateWsContextOptions extends WsSessionOptions {
+  /**
+   * `WsProvider` 掛載時是否自動連線。
+   *
+   * @default true
+   */
+  autoConnect?: boolean;
+}
+
 export function createWsContext(options: CreateWsContextOptions) {
-  const { autoConnect = true } = options;
+  const { autoConnect = true, ...sessionOptions } = options;
 
   const StoreCtx = createWsStoreContext();
   const useWsStore = createUseWsStore(StoreCtx);
@@ -16,7 +33,7 @@ export function createWsContext(options: CreateWsContextOptions) {
   const useWsEvents = createUseWsEvents(EventsCtx);
 
   function WsProvider({ children }: PropsWithChildren) {
-    const [session] = useState(() => createWsSession(options));
+    const [session] = useState(() => createWsSession(sessionOptions));
 
     useEffect(() => {
       if (autoConnect) session.connect();

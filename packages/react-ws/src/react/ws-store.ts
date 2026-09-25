@@ -1,8 +1,6 @@
 import { createContext, useContext, type Context } from "react";
-import type { WsStoreApi, WsState } from "../core/ws-state";
+import type { WsState, WsStoreApi } from "../core/ws-state";
 import { useStore } from "./use-store";
-
-export type { WsPhase, WsStatus, WsState, WsStoreApi } from "../core/ws-state";
 
 export function createWsStoreContext() {
   return createContext<WsStoreApi | null>(null);
