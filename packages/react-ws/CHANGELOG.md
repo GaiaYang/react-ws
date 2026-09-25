@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-26
+
+### Changed
+
+- Internal layout: connection code lives under `core`, React bindings under `react`. `createWsSession` owns one socket and is not exported. Reconnect defaults are filled once when the session is created; public option defaults are unchanged
+- Docs (EN / zh-TW): rewrite the package guides, fix broken links, and align zh-TW event headings. `useWsStore` selectors should return a primitive or a stable reference (`Object.is`); a fresh object or array on every call retriggers render and can crash the component. The package does not shallow-compare
+- JSDoc: an empty `url` is a construct failure (`"error"`, existing socket kept, no throw). Reconnect cap is applied before downward jitter. `reconnectJitter: 1` can shrink a wait near 0. A short-lived connection does not reset the cycle until `reconnectMinUptimeMs`
+
 ## [0.7.1] - 2026-09-23
 
 ### Fixed
