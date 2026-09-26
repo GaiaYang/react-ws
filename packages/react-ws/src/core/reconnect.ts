@@ -99,22 +99,18 @@ export function reconnectDelay(
     Number.isFinite(reconnectBackoff) ? reconnectBackoff : 1,
     1,
   );
-  const ms =
-    typeof reconnectMs === "number" && Number.isFinite(reconnectMs)
-      ? reconnectMs
-      : 0;
+  const ms = Number.isFinite(reconnectMs) ? reconnectMs : 0;
   const backoff = ms * factor ** Math.max(attempt - 1, 0);
-  const delayMax = Number.isFinite(reconnectDelayMaxMs)
-    ? reconnectDelayMaxMs
-    : 0;
-  const capped = delayMax > 0 ? Math.min(backoff, delayMax) : backoff;
+  // NaN、Infinity、負數都過不了 > 0，等同不設上限
+  const capped =
+    reconnectDelayMaxMs > 0 ? Math.min(backoff, reconnectDelayMaxMs) : backoff;
   const jitterRatio = Number.isFinite(reconnectJitter) ? reconnectJitter : 0;
   const jitter = Math.min(Math.max(jitterRatio, 0), 1);
   const jittered = capped * (1 - Math.random() * jitter);
   const rounded = Math.round(jittered);
-  if (!Number.isFinite(rounded)) return MAX_TIMEOUT_MS;
-  // 未設上限時退避可到 Infinity，仍要壓回平台能用的延遲
-  return Math.min(Math.max(rounded, 0), MAX_TIMEOUT_MS);
+  const clamped = Math.min(Math.max(rounded, 0), MAX_TIMEOUT_MS);
+  // Infinity 已被夾住；NaN 會穿過 Math.min / Math.max
+  return Number.isFinite(clamped) ? clamped : MAX_TIMEOUT_MS;
 }
 
 /** 重連寫進連線狀態的欄位。 */

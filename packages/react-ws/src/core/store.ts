@@ -25,12 +25,13 @@ export function createStore<State extends object>(
     getState: () => state,
     getInitialState: () => initialState,
     setState: (partial) => {
-      const nextPartial =
+      const nextState =
         typeof partial === "function" ? partial(state) : partial;
-      if (!hasPartialChanged(state, nextPartial)) return;
-      const prev = state;
-      state = Object.assign({}, state, nextPartial);
-      for (const listener of listeners) listener(state, prev);
+      if (!Object.is(nextState, state)) {
+        const prev = state;
+        state = Object.assign({}, state, nextState);
+        for (const listener of listeners) listener(state, prev);
+      }
     },
     subscribe: (listener) => {
       listeners.add(listener);
@@ -39,16 +40,4 @@ export function createStore<State extends object>(
       };
     },
   };
-}
-
-function hasPartialChanged<State extends object>(
-  state: State,
-  partial: Partial<State>,
-): boolean {
-  for (const [key, value] of Object.entries(partial)) {
-    if (!Object.is(state[key as keyof State], value)) {
-      return true;
-    }
-  }
-  return false;
 }
