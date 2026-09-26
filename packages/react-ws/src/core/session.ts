@@ -10,94 +10,98 @@ import {
 import { clientCloseEvent, detachAndClose, stringifyJson } from "./socket";
 import { createWsStore, type WsStatus, type WsStoreApi } from "./ws-state";
 
-/** 一條連線的選項 */
+/** 連線設定。 */
 export interface WsSessionOptions extends ReconnectOptions {
   /**
-   * WebSocket URL。
+   * WebSocket URL。同步 getter 會在每次 `connect()` 開始時呼叫。
    *
-   * getter 須同步（不可 `await`、不可呼叫 hooks）。
+   * getter 必須同步執行，不可 `await`，也不可呼叫 hooks。
    *
-   * 空字串視為建構失敗：發 `"error"`，保留既有連線，不 throw。
+   * 空字串視為建立失敗：觸發 `"error"`，保留既有連線，`connect()` 本身不會 throw。
    */
   url: MaybeGetter<string>;
   /**
-   * 傳給 `new WebSocket` 的第二參數。
+   * 傳入 `new WebSocket(url, protocols)`。
    *
-   * 省略則不傳。getter 回傳空字串會原樣傳入，不會改成省略。
+   * 未設定時不傳入第二個參數。getter 回傳空字串時會原樣傳入，不會改成省略。
    */
   protocols?: MaybeGetter<string | string[]>;
   /**
-   * 將 `MessageEvent.data` 轉成業務資料。
+   * 將原始 `MessageEvent.data` 轉換為應用程式資料。
    *
-   * 擲出時發 `"error"`，不發 `"message"`，不關線。
+   * 擲出例外時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。
    *
-   * 預設行為：字串嘗試 `JSON.parse`；解析失敗或者非字串則原樣回傳
+   * 預設會把字串交給 `JSON.parse`。解析失敗時回傳原始字串，非字串資料則原樣回傳。
    */
   parse?: (data: MessageEvent["data"]) => unknown;
   /**
-   * 應用層心跳選項，省略則不啟用。
+   * 應用層心跳機制。未設定時不會啟用。
    *
    * @default undefined
    */
   liveness?: LivenessOptions;
 }
 
-/** `useWsEvents` 可訂閱的事件。 */
+/** 事件名稱與回呼的對應型別。 */
 export interface WsEvents {
   /**
    * 收到訊息。
    *
-   * @param parsed `parse` 後的資料。`parse` 擲出時改發 `"error"`，不發 `"message"`，不關線。
+   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。
    * @param event 這次的 `MessageEvent`。
    */
   message: (parsed: unknown, event: MessageEvent) => void;
-  /** 連線建立。 */
+  /** WebSocket 連線建立成功。 */
   open: (event: Event) => void;
   /**
-   * 連線錯誤。
+   * WebSocket、握手、設定值取得或 `parse` 發生錯誤。
    *
-   * 來自 socket，或來自握手失敗、`url`／`protocols` 取值失敗、`parse` 擲出。後三者的參數是 `{ type: "error" }`，不是 `Error`。
+   * 握手失敗、`url`／`protocols` 取值失敗，或 `parse` 擲出時，參數是 `{ type: "error" }`，不是 `Error`。原生 WebSocket 的 `"error"` 則傳入原本的事件。
    */
   error: (event: Event) => void;
   /**
-   * 連線關閉。
+   * WebSocket 連線關閉。
    *
-   * 也包含 `disconnect()`、Provider 卸載，以及成功換掉舊連線。有 socket 時才會收到；`reason` 分別是 `"client disconnect"`、`"provider unmount"`、`"reconnect"`。
+   * `disconnect()`、Provider 卸載，以及成功替換舊連線時也會觸發。有 WebSocket 時才會收到。`reason` 分別是 `"client disconnect"`、`"provider unmount"`、`"reconnect"`。
    */
   close: (event: CloseEvent) => void;
 }
 
 export type WsEventsEmitter = Emitter<WsEvents>;
 
-/** `useWsActions()` 回傳值。連線狀態請用 `useWsStore`。 */
+/** `useWsActions()` 的回傳型別。連線狀態請用 `useWsStore`。 */
 export interface WsContextValue {
   /**
-   * 僅在連線開啟時送出。
+   * WebSocket 已連線時送出資料。
    *
-   * 未開啟回傳 `false`，不暫存。已開啟時直接呼叫 `WebSocket.send`；其擲出不會改成 `false`，會往外傳。
+   * 已連線時回傳 `true`。尚未連線時回傳 `false`，不會暫存。已連線時若 `WebSocket.send` 擲出例外，例外會往外拋出。
    *
-   * @returns 已送出為 `true`；未開啟為 `false`
+   * @returns 已送出為 `true`；尚未連線為 `false`
    */
   send: (data: Parameters<WebSocket["send"]>[0]) => boolean;
   /**
-   * `JSON.stringify` 後呼叫 `send`。
+   * 先用 `JSON.stringify` 序列化，再呼叫 `send`。
    *
-   * 無法序列化時回傳 `false`。序列化成功後的送出行為同 `send`（含 `WebSocket.send` 擲出）。
+   * 無法序列化時回傳 `false`。序列化成功後的傳送行為與 `send` 相同。
    */
   sendJson: (data: unknown) => boolean;
   /**
-   * 取值後建構 socket；成功才關閉舊線。
+   * 取得設定後建立 WebSocket。新的 WebSocket 建構成功後，才關閉舊連線。
    *
-   * 本身不 throw。握手失敗發 `"error"` 並保留既有連線。
+   * 這個方法不會 throw。URL 為空、getter 擲出，或 `new WebSocket()` 失敗時，觸發 `"error"`，並保留既有連線。
    *
-   * 握手失敗且重連計時器已觸發時：進入 `closed` 與 `stopped`，停止自動重試。
+   * 若這次呼叫來自已觸發的自動重連計時器，會停止自動重連，狀態變成 `status: "closed"`、`phase: "stopped"`。
    *
-   * 握手失敗且仍在等待重連時：取消該次倒數並再排下一次，提前試失敗仍繼續這一輪。
+   * 若仍在等待自動重連計時器，會取消目前的等待並重新排程。提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。
    */
   connect: () => void;
-  /** 主動斷線；不自動重連。 */
+  /**
+   * 主動關閉 WebSocket，不會觸發自動重連。
+   *
+   * 狀態變成 `phase: "idle"`、`status: "closed"`。
+   */
   disconnect: () => void;
-  /** 讀取當下 `status`，不訂閱。 */
+  /** 取得目前的 `status`，不會建立訂閱。 */
   getStatus: () => WsStatus;
 }
 

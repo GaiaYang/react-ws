@@ -1,51 +1,51 @@
 import { MAX_TIMEOUT_MS } from "./socket";
 
-/** 重連設定選項 */
+/** 自動重連的設定。 */
 export interface ReconnectOptions {
   /**
-   * 非主動斷線後，第一次重連等待（毫秒）。
+   * 非主動斷線後，第一次自動重連的等待時間（毫秒）。
    *
-   * `0` 關閉重連。
+   * `0` 代表停用自動重連。
    *
    * @default 0
    */
   reconnectMs?: number;
   /**
-   * 自動重連次數上限。
+   * 自動重連次數上限。不包含最初的 `connect()`，也不包含手動呼叫的 `connect()`。
    *
-   * `0` 不限制（仍需 `reconnectMs > 0`）。
+   * `0` 代表不限制。只有在 `reconnectMs > 0` 時才會生效。
    *
    * @default 0
    */
   reconnectMax?: number;
   /**
-   * 下次等待的倍率。
+   * 下一次等待時間的倍率。
    *
-   * `1` 固定間隔；小於 `1` 夾回 `1`。
+   * `1` 代表固定間隔。小於 `1` 的值會限制為 `1`。
    *
    * @default 2
    */
   reconnectBackoff?: number;
   /**
-   * 單次等待硬上限（毫秒）。先套上限，再向下抖動。
+   * 單次等待時間的上限（毫秒），包含抖動。抖動只會縮短等待，不會超過這個上限。
    *
-   * `0` 不設上限。
+   * `0` 代表不設上限。
    *
    * @default 30000
    */
   reconnectDelayMaxMs?: number;
   /**
-   * 將每次等待隨機縮短的幅度，取值 `[0, 1]`。
+   * 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。
    *
-   * `0` 不抖動；`1` 可把延遲縮到接近 0。
+   * `0` 代表不使用抖動，`1` 代表 full jitter。預設會將等待時間隨機縮短 0%～20%。
    *
    * @default 0.2
    */
   reconnectJitter?: number;
   /**
-   * 連線需維持多久（毫秒）才歸零重連週期。
+   * WebSocket 要維持開啟多久（毫秒），才會將重連週期歸零。
    *
-   * `0` 表示 `open` 即歸零；短命連線下次重連仍從第一次等待起算，`reconnectMax` 也不易累加。
+   * `0` 代表連線 `open` 後立即歸零。這時即使很快斷線，下一次重連也會從第一次等待起算，`reconnectMax` 也不容易累加。
    *
    * @default 5000
    */
@@ -113,24 +113,24 @@ export function reconnectDelay(
   return Number.isFinite(clamped) ? clamped : MAX_TIMEOUT_MS;
 }
 
-/** 重連寫進連線狀態的欄位。 */
+/** `WsState` 裡的自動重連欄位。 */
 export interface ReconnectState {
   /**
-   * 本輪已排程的自動重連次數（決定重試時 +1，不是連上才 +1）。
+   * 本輪已排程的自動重連次數。
    *
-   * 撐滿 `reconnectMinUptimeMs` 才歸零；等待重連計時器時的手動 `connect()` 不算新一輪。
+   * 非主動斷線並決定重連時就會加一，不是連上之後才加一。連線撐滿 `reconnectMinUptimeMs` 才會歸零。正在等待自動重連時手動呼叫 `connect()`，不會把這一輪的次數歸零。
    */
   reconnectAttempt: number;
   /**
-   * 已達 `reconnectMax` 且最後一次也失敗。
+   * 已達 `reconnectMax`，且最後一次自動重連也失敗。
    *
-   * 之後的 `connect()`／`disconnect()` 清回 `false`。
+   * 之後呼叫 `connect()` 或 `disconnect()` 會重設為 `false`。
    */
   reconnectExhausted: boolean;
   /**
-   * 下次自動重連到期時間（`Date.now()` 毫秒）。
+   * 下一次自動重連的預定時間（`Date.now()` 毫秒時間戳）。
    *
-   * 未在等待時為 `0`。
+   * 沒有等待中的重連時為 `0`。
    */
   nextReconnectAt: number;
 }

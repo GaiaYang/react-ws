@@ -1,21 +1,21 @@
 import type { MaybeGetter } from "../maybe-getter";
 
 /**
- * 應用層心跳選項
+ * `liveness` 的設定。
  *
- * 省略則不啟用。內容由呼叫端自行準備，套件不序列化。
+ * 要送出的內容由應用程式準備，套件不會呼叫 `JSON.stringify`。
  */
 export interface LivenessOptions {
-  /** ping 間隔（毫秒） */
+  /** Ping 的發送間隔（毫秒）。 */
   intervalMs: number;
-  /** 等待 pong 逾時（毫秒） */
+  /** 等待 Pong 的時間（毫秒）。 */
   timeoutMs: number;
-  /** 要送出的 ping；函式則每次呼叫。 */
+  /** 要送出的 Ping。若為函式，每次送出前都會呼叫。 */
   ping: MaybeGetter<Parameters<WebSocket["send"]>[0]>;
   /**
-   * 判定 parse 後是否為 pong。符合則清逾時。
+   * 判斷 `parse` 後的資料是否為 Pong。只有回傳 `true` 才視為 Pong，並結束這次等待。
    *
-   * 擲出視為不是 pong；該筆仍發 `"message"`。
+   * 擲出例外時視為不是 Pong，該則訊息仍會觸發 `"message"`。
    */
   isPong: (data: unknown) => boolean;
 }
