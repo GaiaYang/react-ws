@@ -6,7 +6,7 @@ import { createWsContext } from "react-ws-context";
 export const DEMO_WS_RECONNECT_MAX = 3;
 
 /** Demo 用實例；策略在 create 時固定（此處為靜態 url） */
-export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+export const { WsProvider, useWsActions, useWsState, useWsEvents } =
   createWsContext({
     url: "ws://localhost:8080",
     reconnectMs: 2000,

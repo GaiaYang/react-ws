@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   WsProvider,
   useWsActions,
-  useWsStore,
+  useWsState,
   useWsEvents,
   DEMO_WS_RECONNECT_MAX,
 } from "@/components/demo-ws";
@@ -56,10 +56,10 @@ function formatPhaseDetail(
 
 /** 各自訂閱需要的欄位；倒數的 100ms tick 留在 `ReconnectCountdownRow`，才不會拖著整個面板重繪。 */
 function PhaseHeader() {
-  const phase = useWsStore((state) => state.phase);
-  const status = useWsStore((state) => state.status);
-  const reconnectAttempt = useWsStore((state) => state.reconnectAttempt);
-  const reconnectExhausted = useWsStore((state) => state.reconnectExhausted);
+  const phase = useWsState((state) => state.phase);
+  const status = useWsState((state) => state.status);
+  const reconnectAttempt = useWsState((state) => state.reconnectAttempt);
+  const reconnectExhausted = useWsState((state) => state.reconnectExhausted);
   const badge = PHASE_BADGE[phase];
 
   return (
@@ -85,7 +85,7 @@ function PhaseHeader() {
 }
 
 function StatusRow() {
-  const status = useWsStore((state) => state.status);
+  const status = useWsState((state) => state.status);
 
   return (
     <>
@@ -96,8 +96,8 @@ function StatusRow() {
 }
 
 function ReconnectAttemptRow() {
-  const reconnectAttempt = useWsStore((state) => state.reconnectAttempt);
-  const reconnectExhausted = useWsStore((state) => state.reconnectExhausted);
+  const reconnectAttempt = useWsState((state) => state.reconnectAttempt);
+  const reconnectExhausted = useWsState((state) => state.reconnectExhausted);
 
   return (
     <>
@@ -114,7 +114,7 @@ const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
 /** 每 100ms 更新，隔離在自己的元件裡，其餘 UI 不受影響 */
 function ReconnectCountdownRow() {
-  const nextReconnectAt = useWsStore((state) => state.nextReconnectAt);
+  const nextReconnectAt = useWsState((state) => state.nextReconnectAt);
   const [tick, setTick] = useState({ at: 0, startedAt: 0, now: 0 });
 
   useEffect(() => {
@@ -150,7 +150,7 @@ function ReconnectCountdownRow() {
 
 function ConnectionButtons() {
   const { connect, disconnect } = useWsActions();
-  const phase = useWsStore((state) => state.phase);
+  const phase = useWsState((state) => state.phase);
   const canConnect = phase === "idle" || phase === "stopped";
   const canDisconnect =
     phase === "open" || phase === "connecting" || phase === "reconnecting";
@@ -182,7 +182,7 @@ function ConnectionButtons() {
 /** 輸入框的 state 留在這裡，打字不會重繪狀態面板 */
 function ChatSender() {
   const { sendJson } = useWsActions();
-  const phase = useWsStore((state) => state.phase);
+  const phase = useWsState((state) => state.phase);
   const [text, setText] = useState("hello");
 
   return (
@@ -219,7 +219,7 @@ function LastMessage() {
 
 function StallControls() {
   const { sendJson } = useWsActions();
-  const phase = useWsStore((state) => state.phase);
+  const phase = useWsState((state) => state.phase);
 
   return (
     <div className="border-base-300 flex flex-col gap-2 border-t pt-3">

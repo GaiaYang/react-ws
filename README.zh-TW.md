@@ -63,7 +63,7 @@ API、選項與 hook 行為見 [`packages/react-ws/README.zh-TW.md`](./packages/
 
 import { createWsContext } from "react-ws-context";
 
-export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+export const { WsProvider, useWsActions, useWsState, useWsEvents } =
 	createWsContext({
 		url: "ws://localhost:8080",
 		reconnectMs: 2000,

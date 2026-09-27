@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import {
   createWsSession,
-  type WsContextValue,
+  type WsActions,
   type WsSessionOptions,
 } from "../core/session";
 import { createUseWsEvents, createWsEventsContext } from "./ws-events";
-import { createUseWsStore, createWsStoreContext } from "./ws-store";
+import { createUseWsState, createWsStoreContext } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
 
 /**
@@ -26,7 +26,7 @@ export function createWsContext(options: CreateWsContextOptions) {
   const { autoConnect = true, ...sessionOptions } = options;
 
   const StoreCtx = createWsStoreContext();
-  const useWsStore = createUseWsStore(StoreCtx);
+  const useWsState = createUseWsState(StoreCtx);
   const ActionsCtx = createWsActionsContext();
   const useWsActions = createUseWsActions(ActionsCtx);
   const EventsCtx = createWsEventsContext();
@@ -40,7 +40,7 @@ export function createWsContext(options: CreateWsContextOptions) {
       return () => session.teardown("provider unmount");
     }, [session]);
 
-    const actions = useMemo<WsContextValue>(
+    const actions = useMemo<WsActions>(
       () => ({
         send: session.send,
         sendJson: session.sendJson,
@@ -65,7 +65,7 @@ export function createWsContext(options: CreateWsContextOptions) {
   return {
     WsProvider,
     useWsActions,
-    useWsStore,
+    useWsState,
     useWsEvents,
   };
 }

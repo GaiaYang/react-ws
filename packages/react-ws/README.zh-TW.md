@@ -32,7 +32,7 @@ pnpm add react-ws-context react
 
 import { createWsContext } from "react-ws-context";
 
-export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+export const { WsProvider, useWsActions, useWsState, useWsEvents } =
   createWsContext({
     url: "ws://localhost:8080",
     reconnectMs: 2000,
@@ -42,7 +42,7 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 ```tsx
 "use client";
 
-import { WsProvider, useWsActions, useWsStore, useWsEvents } from "./ws";
+import { WsProvider, useWsActions, useWsState, useWsEvents } from "./ws";
 
 export function App({ children }: { children: React.ReactNode }) {
   return <WsProvider>{children}</WsProvider>;
@@ -50,8 +50,8 @@ export function App({ children }: { children: React.ReactNode }) {
 
 function Chat() {
   const { sendJson } = useWsActions();
-  const status = useWsStore((s) => s.status);
-  const phase = useWsStore((s) => s.phase);
+  const status = useWsState((s) => s.status);
+  const phase = useWsState((s) => s.phase);
 
   useWsEvents("message", (data) => {
     // 訊息歷史請存放在自己的 state 或 store
@@ -88,11 +88,11 @@ WebSocket ──→ Events ─────────────→ Event hand
 | 需求                     | API            |
 | ------------------------ | -------------- |
 | 傳送訊息、建立或關閉連線 | `useWsActions` |
-| 訂閱連線狀態             | `useWsStore`   |
+| 訂閱連線狀態             | `useWsState`   |
 | 監聽 WebSocket 事件      | `useWsEvents`  |
 
 - `useWsActions`：執行 WebSocket 操作（`connect`／`send`／`disconnect`）
-- `useWsStore`：讀取連線狀態
+- `useWsState`：讀取連線狀態
 - `useWsEvents`：接收 WebSocket 事件通知
 
 ### 套件負責的事項
@@ -112,7 +112,7 @@ WebSocket ──→ Events ─────────────→ Event hand
 
 ## 連線狀態
 
-`useWsStore` 訂閱的是 `WsState`，包含以下欄位：
+`useWsState` 訂閱的是 `WsState`，包含以下欄位：
 
 - `status`
 - `phase`
@@ -157,7 +157,7 @@ WebSocket ──→ Events ─────────────→ Event hand
 例如：
 
 ```tsx
-const canConnect = useWsStore(
+const canConnect = useWsState(
   (s) => s.phase === "idle" || s.phase === "stopped",
 );
 ```
@@ -595,7 +595,7 @@ createWsContext({
 | -------------- | ------------------------------------ | -------------------------------- |
 | `WsProvider`   | `React.FC<{ children }>`             | 管理子元件樹所使用的 WebSocket。 |
 | `useWsActions` | `() => WsContextValue`               | 提供 WebSocket 操作。            |
-| `useWsStore`   | `() => WsState` 或 `(selector) => T` | 訂閱 WebSocket 連線狀態。        |
+| `useWsState`   | `() => WsState` 或 `(selector) => T` | 訂閱 WebSocket 連線狀態。        |
 | `useWsEvents`  | `(type, handler) => void`            | 訂閱 WebSocket 事件。            |
 
 ### `WsProvider`
@@ -632,19 +632,19 @@ createWsContext({
 | `disconnect` | `() => void`                 | 主動關閉 WebSocket。狀態會變成 `phase: "idle"`、`status: "closed"`，且不會觸發自動重連。   |
 | `getState`   | `() => WsState`              | 取得目前的連線狀態，不會建立訂閱。給不需要渲染的場合讀取整份 `WsState`。                   |
 
-### `useWsStore`
+### `useWsState`
 
-`useWsStore(): WsState` 或帶 selector 的版本：
+`useWsState(): WsState` 或帶 selector 的版本：
 
 ```ts
-useWsStore(): WsState
-useWsStore<T>(selector: (state: WsState) => T): T
+useWsState(): WsState
+useWsState<T>(selector: (state: WsState) => T): T
 ```
 
 如果在對應的 `WsProvider` 外呼叫，會擲出：
 
 ```text
-"useWsStore 必須包在對應的 WsProvider 內"
+"useWsState 必須包在對應的 WsProvider 內"
 ```
 
 這個 hook 使用 React 的 `useSyncExternalStore`。

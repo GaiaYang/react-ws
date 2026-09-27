@@ -131,7 +131,7 @@ describe("createWsContext", () => {
   });
 
   it("connect → message → disconnect", async () => {
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -141,8 +141,8 @@ describe("createWsContext", () => {
     const closes: string[] = [];
 
     function Probe() {
-      const { status } = useWsStore();
-      const phase = useWsStore((s) => s.phase);
+      const { status } = useWsState();
+      const phase = useWsState((s) => s.phase);
       const { sendJson, disconnect, getState } = useWsActions();
       useWsEvents("message", (data) => {
         messages.push(data);
@@ -198,7 +198,7 @@ describe("createWsContext", () => {
   it("unexpected close → reconnect", async () => {
     vi.useFakeTimers();
 
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -209,9 +209,9 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
       return createElement(
         "div",
         {
@@ -265,15 +265,15 @@ describe("createWsContext", () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(1);
 
     try {
-      const { WsProvider, useWsStore } = createWsContext({
+      const { WsProvider, useWsState } = createWsContext({
         url: "ws://test",
         autoConnect: true,
         reconnectMs: 100,
       });
 
       function Probe() {
-        const status = useWsStore((s) => s.status);
-        const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
+        const status = useWsState((s) => s.status);
+        const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
         return createElement(
           "div",
           {
@@ -332,7 +332,7 @@ describe("createWsContext", () => {
   it("stops after reconnectMax and connect() retries", async () => {
     vi.useFakeTimers();
 
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -346,10 +346,10 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
-      const reconnectExhausted = useWsStore((s) => s.reconnectExhausted);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
+      const reconnectExhausted = useWsState((s) => s.reconnectExhausted);
       return createElement(
         "div",
         {
@@ -455,7 +455,7 @@ describe("createWsContext", () => {
   it("send returns false when socket is not OPEN", async () => {
     vi.useFakeTimers();
 
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -468,7 +468,7 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const { status } = useWsStore();
+      const { status } = useWsState();
       return createElement("div", null, status);
     }
 
@@ -575,7 +575,7 @@ describe("createWsContext", () => {
   it("getter throw before connect emits error and stays idle", async () => {
     const errors: Event[] = [];
 
-    const { WsProvider, useWsStore, useWsEvents } = createWsContext({
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => {
         throw new Error("no token");
       },
@@ -583,8 +583,8 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("error", (event) => {
         errors.push(event);
       });
@@ -610,14 +610,14 @@ describe("createWsContext", () => {
 
   it("empty url is the same as getter throw", async () => {
     const errors: Event[] = [];
-    const { WsProvider, useWsStore, useWsEvents } = createWsContext({
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => "",
       autoConnect: true,
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("error", (event) => {
         errors.push(event);
       });
@@ -644,7 +644,7 @@ describe("createWsContext", () => {
   it("getter throw while open keeps the current socket", async () => {
     let shouldThrow = false;
 
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: () => {
         if (shouldThrow) throw new Error("no token");
         return "ws://test";
@@ -656,8 +656,8 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", {
         "data-status": status,
         "data-phase": phase,
@@ -741,7 +741,7 @@ describe("createWsContext", () => {
   it("invalid url while open keeps the current socket", async () => {
     let nextUrl = "ws://test";
 
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: () => nextUrl,
       autoConnect: true,
     });
@@ -750,8 +750,8 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", {
         "data-status": status,
         "data-phase": phase,
@@ -798,7 +798,7 @@ describe("createWsContext", () => {
     vi.useFakeTimers();
     let shouldThrow = false;
 
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: () => {
         if (shouldThrow) throw new Error("no token");
         return "ws://test";
@@ -808,7 +808,7 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const phase = useWsStore((s) => s.phase);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", { "data-phase": phase }, phase);
     }
 
@@ -845,14 +845,14 @@ describe("createWsContext", () => {
     vi.useFakeTimers();
     let nextUrl = "ws://test";
 
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: () => nextUrl,
       autoConnect: true,
       reconnectMs: 100,
     });
 
     function Probe() {
-      const phase = useWsStore((s) => s.phase);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", { "data-phase": phase }, phase);
     }
 
@@ -886,7 +886,7 @@ describe("createWsContext", () => {
     vi.stubGlobal("WebSocket", undefined);
 
     const errors: Event[] = [];
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -896,7 +896,7 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
+      const status = useWsState((s) => s.status);
       useWsEvents("error", (event) => {
         errors.push(event);
       });
@@ -1008,7 +1008,7 @@ describe("createWsContext", () => {
     vi.useFakeTimers();
     const messages: unknown[] = [];
     const errors: Event[] = [];
-    const { WsProvider, useWsStore, useWsEvents } = createWsContext({
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 0,
@@ -1024,7 +1024,7 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
+      const status = useWsState((s) => s.status);
       useWsEvents("message", (data) => {
         messages.push(data);
       });
@@ -1063,7 +1063,7 @@ describe("createWsContext", () => {
     vi.useFakeTimers();
     const messages: unknown[] = [];
     const errors: Event[] = [];
-    const { WsProvider, useWsStore, useWsEvents } = createWsContext({
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 0,
@@ -1078,7 +1078,7 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
+      const status = useWsState((s) => s.status);
       useWsEvents("message", (data) => {
         messages.push(data);
       });
@@ -1114,7 +1114,7 @@ describe("createWsContext", () => {
   it("ping that disconnects does not emit open after close", async () => {
     const events: string[] = [];
     let api!: ReturnType<ReturnType<typeof createWsContext>["useWsActions"]>;
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -1131,8 +1131,8 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("open", () => {
         events.push("open");
       });
@@ -1167,7 +1167,7 @@ describe("createWsContext", () => {
     const events: string[] = [];
     let api!: ReturnType<ReturnType<typeof createWsContext>["useWsActions"]>;
     let switched = false;
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -1187,8 +1187,8 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("open", () => {
         events.push("open");
       });
@@ -1224,7 +1224,7 @@ describe("createWsContext", () => {
   it("open still fires when liveness ping throws", async () => {
     vi.useFakeTimers();
     const opens: Event[] = [];
-    const { WsProvider, useWsStore, useWsEvents } = createWsContext({
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1242,7 +1242,7 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
+      const status = useWsState((s) => s.status);
       useWsEvents("open", (event) => {
         opens.push(event);
       });
@@ -1269,7 +1269,7 @@ describe("createWsContext", () => {
 
   it("liveness timeout follows unintentional-close reconnect", async () => {
     vi.useFakeTimers();
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1285,8 +1285,8 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", {
         "data-status": status,
         "data-phase": phase,
@@ -1324,7 +1324,7 @@ describe("createWsContext", () => {
   it("stale onclose does not mutate the current socket", async () => {
     vi.useFakeTimers();
     const closes: string[] = [];
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -1337,10 +1337,10 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
-      const nextReconnectAt = useWsStore((s) => s.nextReconnectAt);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
       useWsEvents("close", (event) => {
         closes.push(event.reason || "close");
       });
@@ -1413,7 +1413,7 @@ describe("createWsContext", () => {
 
   it("current socket onclose still schedules reconnect", async () => {
     vi.useFakeTimers();
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1423,8 +1423,8 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
       return createElement("div", {
         "data-phase": phase,
         "data-attempt": reconnectAttempt,
@@ -1467,7 +1467,7 @@ describe("createWsContext", () => {
 
   it("fired reconnect without WebSocket becomes stopped", async () => {
     vi.useFakeTimers();
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1477,9 +1477,9 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
-      const nextReconnectAt = useWsStore((s) => s.nextReconnectAt);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
       return createElement("div", {
         "data-status": status,
         "data-phase": phase,
@@ -1524,7 +1524,7 @@ describe("createWsContext", () => {
   });
 
   it("manual connect without WebSocket leaves the store unchanged", async () => {
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
     });
@@ -1532,11 +1532,11 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
-      const reconnectExhausted = useWsStore((s) => s.reconnectExhausted);
-      const nextReconnectAt = useWsStore((s) => s.nextReconnectAt);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
+      const reconnectExhausted = useWsState((s) => s.reconnectExhausted);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
       return createElement("div", {
         "data-status": status,
         "data-phase": phase,
@@ -1584,7 +1584,7 @@ describe("createWsContext", () => {
   it("getter throw after fired reconnect does not schedule another timer", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
-    const { WsProvider, useWsStore } = createWsContext({
+    const { WsProvider, useWsState } = createWsContext({
       url: () => {
         if (shouldThrow) throw new Error("no token");
         return "ws://test";
@@ -1597,8 +1597,8 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const phase = useWsStore((s) => s.phase);
-      const nextReconnectAt = useWsStore((s) => s.nextReconnectAt);
+      const phase = useWsState((s) => s.phase);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
       return createElement("div", {
         "data-phase": phase,
         "data-next": nextReconnectAt,
@@ -1639,7 +1639,7 @@ describe("createWsContext", () => {
 
   it("disconnect while waiting then connect is connecting", async () => {
     vi.useFakeTimers();
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1651,7 +1651,7 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const phase = useWsStore((s) => s.phase);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", { "data-phase": phase });
     }
 
@@ -1683,7 +1683,7 @@ describe("createWsContext", () => {
 
   it("manual connect while waiting is connecting and keeps the attempt", async () => {
     vi.useFakeTimers();
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1695,9 +1695,9 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
-      const nextReconnectAt = useWsStore((s) => s.nextReconnectAt);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
       return createElement("div", {
         "data-phase": phase,
         "data-attempt": reconnectAttempt,
@@ -1744,7 +1744,7 @@ describe("createWsContext", () => {
     vi.useFakeTimers();
     let shouldThrow = false;
     const errors: Event[] = [];
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: () => {
           if (shouldThrow) throw new Error("no token");
@@ -1760,9 +1760,9 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const phase = useWsStore((s) => s.phase);
-      const reconnectAttempt = useWsStore((s) => s.reconnectAttempt);
-      const nextReconnectAt = useWsStore((s) => s.nextReconnectAt);
+      const phase = useWsState((s) => s.phase);
+      const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
       useWsEvents("error", (event) => {
         errors.push(event);
       });
@@ -1813,7 +1813,7 @@ describe("createWsContext", () => {
 
   it("disconnect while waiting does not reconnect after the timer", async () => {
     vi.useFakeTimers();
-    const { WsProvider, useWsActions, useWsStore } = createWsContext({
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
       url: "ws://test",
       autoConnect: true,
       reconnectMs: 100,
@@ -1825,7 +1825,7 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const phase = useWsStore((s) => s.phase);
+      const phase = useWsState((s) => s.phase);
       return createElement("div", { "data-phase": phase });
     }
 
@@ -1888,7 +1888,7 @@ describe("createWsContext", () => {
   it("handshake error handler disconnect stays idle", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: () => {
           if (shouldThrow) throw new Error("no token");
@@ -1904,8 +1904,8 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("error", () => {
         api.disconnect();
       });
@@ -1942,7 +1942,7 @@ describe("createWsContext", () => {
   it("handshake error handler throw still stops auto-retry", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
-    const { WsProvider, useWsStore, useWsEvents } = createWsContext({
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => {
         if (shouldThrow) throw new Error("no token");
         return "ws://test";
@@ -1955,8 +1955,8 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("error", () => {
         throw new Error("handler");
       });
@@ -2002,7 +2002,7 @@ describe("createWsContext", () => {
   });
 
   it("close handler throw still takes over the new socket", async () => {
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -2011,8 +2011,8 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("close", (event) => {
         if (event.reason === "reconnect") {
           throw new Error("handler");
@@ -2057,7 +2057,7 @@ describe("createWsContext", () => {
   });
 
   it("close handler disconnect stays idle", async () => {
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -2066,8 +2066,8 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("close", (event) => {
         if (event.reason === "reconnect") {
           api.disconnect();
@@ -2109,7 +2109,7 @@ describe("createWsContext", () => {
   });
 
   it("close handler connect takes over the nested socket", async () => {
-    const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
         autoConnect: true,
@@ -2118,8 +2118,8 @@ describe("createWsContext", () => {
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
-      const status = useWsStore((s) => s.status);
-      const phase = useWsStore((s) => s.phase);
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("close", (event) => {
         if (event.reason === "reconnect") {
           api.connect();

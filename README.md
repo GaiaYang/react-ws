@@ -63,7 +63,7 @@ API, options, and hook behavior are in [`packages/react-ws/README.en.md`](./pack
 
 import { createWsContext } from "react-ws-context";
 
-export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+export const { WsProvider, useWsActions, useWsState, useWsEvents } =
 	createWsContext({
 		url: "ws://localhost:8080",
 		reconnectMs: 2000,

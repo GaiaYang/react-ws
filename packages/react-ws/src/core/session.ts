@@ -69,8 +69,8 @@ export interface WsEvents {
 
 export type WsEventsEmitter = Emitter<WsEvents>;
 
-/** `useWsActions()` 的回傳型別。要訂閱並重新渲染請用 `useWsStore`。 */
-export interface WsContextValue {
+/** `useWsActions()` 的回傳型別。要訂閱並重新渲染請用 `useWsState`。 */
+export interface WsActions {
   /**
    * WebSocket 已連線時送出資料。
    *
@@ -105,7 +105,7 @@ export interface WsContextValue {
   getState: () => WsState;
 }
 
-export interface WsSession extends WsContextValue {
+export interface WsSession extends WsActions {
   store: WsStoreApi;
   emitter: WsEventsEmitter;
   /** `disconnect` 與 Provider 卸載共用，避免兩處漏清 timer */

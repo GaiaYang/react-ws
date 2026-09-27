@@ -32,7 +32,7 @@ For runtime and Next.js notes, see [Next.js and runtime](#nextjs-and-runtime).
 
 import { createWsContext } from "react-ws-context";
 
-export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
+export const { WsProvider, useWsActions, useWsState, useWsEvents } =
   createWsContext({
     url: "ws://localhost:8080",
     reconnectMs: 2000,
@@ -42,7 +42,7 @@ export const { WsProvider, useWsActions, useWsStore, useWsEvents } =
 ```tsx
 "use client";
 
-import { WsProvider, useWsActions, useWsStore, useWsEvents } from "./ws";
+import { WsProvider, useWsActions, useWsState, useWsEvents } from "./ws";
 
 export function App({ children }: { children: React.ReactNode }) {
   return <WsProvider>{children}</WsProvider>;
@@ -50,8 +50,8 @@ export function App({ children }: { children: React.ReactNode }) {
 
 function Chat() {
   const { sendJson } = useWsActions();
-  const status = useWsStore((s) => s.status);
-  const phase = useWsStore((s) => s.phase);
+  const status = useWsState((s) => s.status);
+  const phase = useWsState((s) => s.phase);
 
   useWsEvents("message", (data) => {
     // Keep message history in your own state or store
@@ -88,11 +88,11 @@ WebSocket ──→ Events ─────────────→ Event hand
 | Need                                        | API            |
 | ------------------------------------------- | -------------- |
 | Send messages, open or close the connection | `useWsActions` |
-| Subscribe to connection state               | `useWsStore`   |
+| Subscribe to connection state               | `useWsState`   |
 | Listen for WebSocket events                 | `useWsEvents`  |
 
 - `useWsActions`: run WebSocket operations (`connect` / `send` / `disconnect`)
-- `useWsStore`: read connection state
+- `useWsState`: read connection state
 - `useWsEvents`: receive WebSocket event notifications
 
 ### What this package handles
@@ -112,7 +112,7 @@ WebSocket ──→ Events ─────────────→ Event hand
 
 ## Connection state
 
-`useWsStore` subscribes to `WsState`, which has these fields:
+`useWsState` subscribes to `WsState`, which has these fields:
 
 - `status`
 - `phase`
@@ -157,7 +157,7 @@ When `phase === "reconnecting"` and `status === "connecting"`, the reconnect tim
 For example:
 
 ```tsx
-const canConnect = useWsStore(
+const canConnect = useWsState(
   (s) => s.phase === "idle" || s.phase === "stopped",
 );
 ```
@@ -595,7 +595,7 @@ For `connect()` construct failure, see [Reconnect → `connect()` replacement ru
 | -------------- | ------------------------------------ | ------------------------------------------ |
 | `WsProvider`   | `React.FC<{ children }>`             | Manages the WebSocket used by its subtree. |
 | `useWsActions` | `() => WsContextValue`               | WebSocket operations.                      |
-| `useWsStore`   | `() => WsState` or `(selector) => T` | Subscribe to WebSocket connection state.   |
+| `useWsState`   | `() => WsState` or `(selector) => T` | Subscribe to WebSocket connection state.   |
 | `useWsEvents`  | `(type, handler) => void`            | Subscribe to WebSocket events.             |
 
 ### `WsProvider`
@@ -632,19 +632,19 @@ A component that only uses `useWsActions` does not re-render on store or message
 | `disconnect` | `() => void`                 | Closes the WebSocket on purpose. The state becomes `phase: "idle"`, `status: "closed"`, and auto-reconnect does not run.               |
 | `getState`   | `() => WsState`              | Reads the current connection state without a subscription. Use it to read the whole `WsState` when you do not need to render.          |
 
-### `useWsStore`
+### `useWsState`
 
-`useWsStore(): WsState`, or with a selector:
+`useWsState(): WsState`, or with a selector:
 
 ```ts
-useWsStore(): WsState
-useWsStore<T>(selector: (state: WsState) => T): T
+useWsState(): WsState
+useWsState<T>(selector: (state: WsState) => T): T
 ```
 
 Calling it outside the matching `WsProvider` throws:
 
 ```text
-"useWsStore 必須包在對應的 WsProvider 內"
+"useWsState 必須包在對應的 WsProvider 內"
 ```
 
 This hook uses React's `useSyncExternalStore`.
