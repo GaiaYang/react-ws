@@ -8,14 +8,10 @@ import { createUseWsEvents, createWsEventsContext } from "./ws-events";
 import { createUseWsState, createWsStoreContext } from "./ws-store";
 import { createUseWsActions, createWsActionsContext } from "./ws-actions";
 
-/**
- * `createWsContext` 的設定選項。
- *
- * 建立後設定即固定。`url` 與 `protocols` 若為 getter，會在每次 `connect()` 開始時同步呼叫。
- */
+/** `createWsContext` 的設定選項 */
 export interface CreateWsContextOptions extends WsSessionOptions {
   /**
-   * `WsProvider` 掛載時是否自動建立連線。
+   * `WsProvider` 掛載時是否自動建立連線
    *
    * @default true
    */

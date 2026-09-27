@@ -10,10 +10,12 @@ import {
 import { clientCloseEvent, detachAndClose, stringifyJson } from "./socket";
 import { createWsStore, type WsState, type WsStoreApi } from "./ws-state";
 
-/** 連線設定。 */
+/** 連線設定 */
 export interface WsSessionOptions extends ReconnectOptions {
   /**
-   * WebSocket URL。同步 getter 會在每次 `connect()` 開始時呼叫。
+   * WebSocket URL
+   *
+   * 同步 getter 會在每次 `connect()` 開始時呼叫。
    *
    * getter 必須同步執行，不可 `await`，也不可呼叫 hooks。
    *
@@ -21,87 +23,103 @@ export interface WsSessionOptions extends ReconnectOptions {
    */
   url: MaybeGetter<string>;
   /**
-   * 傳入 `new WebSocket(url, protocols)`。
+   * 傳入 `new WebSocket(url, protocols)`
    *
-   * 未設定時不傳入第二個參數。getter 回傳空字串時會原樣傳入，不會改成省略。
+   * 未設定時不傳入第二個參數。
+   *
+   * getter 回傳空字串時會原樣傳入，不會改成省略。
    */
   protocols?: MaybeGetter<string | string[]>;
   /**
-   * 將原始 `MessageEvent.data` 轉換為應用程式資料。
+   * 將原始 `MessageEvent.data` 轉換為應用程式資料
    *
    * 擲出例外時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。
    *
-   * 預設會把字串交給 `JSON.parse`。解析失敗時回傳原始字串，非字串資料則原樣回傳。
+   * 預設會把字串交給 `JSON.parse`。
+   *
+   * 解析失敗時回傳原始字串，非字串資料則原樣回傳。
    */
   parse?: (data: MessageEvent["data"]) => unknown;
   /**
-   * 應用層心跳機制。未設定時不會啟用。
+   * 應用層心跳機制
+   *
+   * 未設定時不會啟用。
    *
    * @default undefined
    */
   liveness?: LivenessOptions;
 }
 
-/** 事件名稱與回呼的對應型別。 */
+/** 事件名稱與回呼的對應型別 */
 export interface WsEvents {
   /**
-   * 收到訊息。
+   * 收到訊息
    *
    * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。
    * @param event 這次的 `MessageEvent`。
    */
   message: (parsed: unknown, event: MessageEvent) => void;
-  /** WebSocket 連線建立成功。 */
+  /** WebSocket 連線建立成功 */
   open: (event: Event) => void;
   /**
-   * WebSocket、握手、設定值取得或 `parse` 發生錯誤。
+   * WebSocket、握手、設定值取得或 `parse` 發生錯誤
    *
-   * 握手失敗、`url`／`protocols` 取值失敗，或 `parse` 擲出時，參數是 `{ type: "error" }`，不是 `Error`。原生 WebSocket 的 `"error"` 則傳入原本的事件。
+   * 握手失敗、`url`／`protocols` 取值失敗，或 `parse` 擲出時，參數是 `{ type: "error" }`，不是 `Error`。
+   *
+   * 原生 WebSocket 的 `"error"` 則傳入原本的事件。
    */
   error: (event: Event) => void;
   /**
-   * WebSocket 連線關閉。
+   * WebSocket 連線關閉
    *
-   * `disconnect()`、Provider 卸載，以及成功替換舊連線時也會觸發。有 WebSocket 時才會收到。`reason` 分別是 `"client disconnect"`、`"provider unmount"`、`"reconnect"`。
+   * `disconnect()`、Provider 卸載，以及成功替換舊連線時也會觸發。
    */
   close: (event: CloseEvent) => void;
 }
 
 export type WsEventsEmitter = Emitter<WsEvents>;
 
-/** `useWsActions()` 的回傳型別。要訂閱並重新渲染請用 `useWsState`。 */
+/** WebSocket 操作 */
 export interface WsActions {
   /**
-   * WebSocket 已連線時送出資料。
+   * WebSocket 已連線時送出資料
    *
-   * 已連線時回傳 `true`。尚未連線時回傳 `false`，不會暫存。已連線時若 `WebSocket.send` 擲出例外，例外會往外拋出。
+   * 已連線時回傳 `true`。
    *
-   * @returns 已送出為 `true`；尚未連線為 `false`
+   * 尚未連線時回傳 `false`，不會暫存。
+   *
+   * 已連線時若 `WebSocket.send` 擲出例外，例外會往外拋出。
+   *
+   * @returns 已送出為 `true`；尚未連線為 `false`。
    */
   send: (data: Parameters<WebSocket["send"]>[0]) => boolean;
   /**
-   * 先用 `JSON.stringify` 序列化，再呼叫 `send`。
+   * 先用 `JSON.stringify` 序列化，再呼叫 `send`
    *
-   * 無法序列化時回傳 `false`。序列化成功後的傳送行為與 `send` 相同。
+   * 無法序列化時回傳 `false`，序列化成功後的傳送行為與 `send` 相同。
    */
   sendJson: (data: unknown) => boolean;
   /**
-   * 取得設定後建立 WebSocket。新的 WebSocket 建構成功後，才關閉舊連線。
+   * 取得設定後建立 WebSocket
    *
-   * 這個方法不會 throw。URL 為空、getter 擲出，或 `new WebSocket()` 失敗時，觸發 `"error"`，並保留既有連線。
+   * 新的 WebSocket 建構成功後才關閉舊連線，這個方法不會 throw。
+   *
+   * URL 為空、getter 擲出，或 `new WebSocket()` 失敗時，觸發 `"error"`，並保留既有連線。
    *
    * 若這次呼叫來自已觸發的自動重連計時器，會停止自動重連，狀態變成 `status: "closed"`、`phase: "stopped"`。
    *
-   * 若仍在等待自動重連計時器，會取消目前的等待並重新排程。提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。
+   * 若仍在等待自動重連計時器，會取消目前的等待並重新排程。
+   *
+   * 提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。
    */
   connect: () => void;
   /**
-   * 主動關閉 WebSocket，不會觸發自動重連。
+   * 主動關閉 WebSocket，不會觸發自動重連
    *
    * 狀態變成 `phase: "idle"`、`status: "closed"`。
    */
   disconnect: () => void;
-  /** 取得目前的連線狀態，不會建立訂閱。給不需要渲染的場合讀取整份 `WsState`。 */
+  /** 取得呼叫當下的連線狀態，不會建立訂閱。 */
   getState: () => WsState;
 }
 
@@ -135,7 +153,7 @@ function emitSafe<E extends keyof WsEvents>(
 }
 
 /**
- * 純 JS 連線 session：擁有一條 WebSocket 的生命週期。
+ * 純 JS 連線 session，擁有一條 WebSocket 的生命週期
  *
  * React 或其他框架只負責建立、掛載時 `connect`、卸載時 `teardown`。
  */

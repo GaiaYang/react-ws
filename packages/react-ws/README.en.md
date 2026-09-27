@@ -91,8 +91,8 @@ WebSocket ──→ Events ─────────────→ Event hand
 | Subscribe to connection state               | `useWsState`   |
 | Listen for WebSocket events                 | `useWsEvents`  |
 
-- `useWsActions`: run WebSocket operations (`connect` / `send` / `disconnect`)
-- `useWsState`: read connection state
+- `useWsActions`: run WebSocket operations, or read the current connection state
+- `useWsState`: subscribe to connection state
 - `useWsEvents`: receive WebSocket event notifications
 
 ### What this package handles
@@ -112,7 +112,9 @@ WebSocket ──→ Events ─────────────→ Event hand
 
 ## Connection state
 
-`useWsState` subscribes to `WsState`, which has these fields:
+`useWsState` subscribes to `WsState` and re-renders when it changes. `useWsActions().getState()` returns the `WsState` when called and does not subscribe.
+
+The fields are:
 
 - `status`
 - `phase`
@@ -252,7 +254,7 @@ Default `parse` behavior:
 | ----------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the result after `parse`.                                                                                         |
 | `"open"`    | `(event: Event) => void`                       | The WebSocket connection opened.                                                                                            |
-| `"error"`   | `(event: Event) => void`                       | A WebSocket, handshake, or `parse` error. Handshake or option-resolution failures pass `{ type: "error" }`, not an `Error`. |
+| `"error"`   | `(event: Event) => void`                       | A WebSocket, handshake, or `parse` error. For a handshake failure, an option-resolution failure, or a thrown `parse`, the argument is `{ type: "error" }`, not an `Error`. |
 | `"close"`   | `(event: CloseEvent) => void`                  | The WebSocket connection closed.                                                                                            |
 
 ### Subscription behavior
@@ -594,7 +596,7 @@ For `connect()` construct failure, see [Reconnect → `connect()` replacement ru
 | Name           | Type                                 | Description                                |
 | -------------- | ------------------------------------ | ------------------------------------------ |
 | `WsProvider`   | `React.FC<{ children }>`             | Manages the WebSocket used by its subtree. |
-| `useWsActions` | `() => WsContextValue`               | WebSocket operations.                      |
+| `useWsActions` | `() => WsActions`                    | WebSocket operations.                      |
 | `useWsState`   | `() => WsState` or `(selector) => T` | Subscribe to WebSocket connection state.   |
 | `useWsEvents`  | `(type, handler) => void`            | Subscribe to WebSocket events.             |
 
@@ -612,17 +614,18 @@ For `connect()` construct failure, see [Reconnect → `connect()` replacement ru
 
 ### `useWsActions`
 
-`useWsActions(): WsContextValue`
-
-Calling it outside the matching `WsProvider` throws:
-
-```text
-"useWsActions 必須包在對應的 WsProvider 內"
-```
-
-Method references stay stable.
+`useWsActions(): WsActions`
 
 A component that only uses `useWsActions` does not re-render on store or message updates.
+
+```tsx
+const { getState, sendJson } = useWsActions();
+
+function ping() {
+  if (getState().status !== "open") return;
+  sendJson({ type: "ping" });
+}
+```
 
 | Method       | Signature                    | Description                                                                                                                            |
 | ------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -630,7 +633,7 @@ A component that only uses `useWsActions` does not re-render on store or message
 | `sendJson`   | `(data: unknown) => boolean` | Serializes with `JSON.stringify`, then calls `send`. See [Sending messages](#sending-messages).                                        |
 | `connect`    | `() => void`                 | Reads the options, then opens the WebSocket. See [Reconnect → `connect()` replacement rules](#connect-replacement-rules).              |
 | `disconnect` | `() => void`                 | Closes the WebSocket on purpose. The state becomes `phase: "idle"`, `status: "closed"`, and auto-reconnect does not run.               |
-| `getState`   | `() => WsState`              | Reads the current connection state without a subscription. Use it to read the whole `WsState` when you do not need to render.          |
+| `getState`   | `() => WsState`              | Returns the `WsState` when called and does not subscribe.                                              |
 
 ### `useWsState`
 
@@ -639,12 +642,6 @@ A component that only uses `useWsActions` does not re-render on store or message
 ```ts
 useWsState(): WsState
 useWsState<T>(selector: (state: WsState) => T): T
-```
-
-Calling it outside the matching `WsProvider` throws:
-
-```text
-"useWsState 必須包在對應的 WsProvider 內"
 ```
 
 This hook uses React's `useSyncExternalStore`.
@@ -679,12 +676,6 @@ If the UI needs to show "attempt n of m", keep those options yourself when you c
 
 `useWsEvents(type, handler)`
 
-Calling it outside the matching `WsProvider` throws:
-
-```text
-"useWsEvents 必須包在對應的 WsProvider 內"
-```
-
 For event types and subscription behavior, see [Events](#events).
 
 ## Next.js and runtime
@@ -705,11 +696,11 @@ The main `react-ws-context` entry exports these types:
 | `CreateWsContextOptions` | Options for `createWsContext`.                     |
 | `MaybeGetter<T>`         | `T \| (() => T)`. A static value or a sync getter. |
 | `LivenessOptions`        | Options for `liveness`.                            |
-| `WsContextValue`         | Return type of `useWsActions()`.                   |
+| `WsActions`              | Return type of `useWsActions()`.                   |
 | `WsEvents`               | Map from event name to handler.                    |
 | `WsStatus`               | WebSocket connection state.                        |
 | `WsPhase`                | The Provider's connection phase.                   |
-| `WsState`                | Subscribable connection state.                     |
+| `WsState`                | Connection state. `useWsState` subscribes to it. `getState()` reads it when called. |
 
 ## Demo
 

@@ -1,9 +1,9 @@
 import { MAX_TIMEOUT_MS } from "./socket";
 
-/** 自動重連的設定。 */
+/** 自動重連的設定 */
 export interface ReconnectOptions {
   /**
-   * 非主動斷線後，第一次自動重連的等待時間（毫秒）。
+   * 非主動斷線後，第一次自動重連的等待時間（毫秒）
    *
    * `0` 代表停用自動重連。
    *
@@ -11,23 +11,27 @@ export interface ReconnectOptions {
    */
   reconnectMs?: number;
   /**
-   * 自動重連次數上限。不包含最初的 `connect()`，也不包含手動呼叫的 `connect()`。
+   * 自動重連次數上限
    *
-   * `0` 代表不限制。只有在 `reconnectMs > 0` 時才會生效。
+   * 不包含最初的 `connect()`，也不包含手動呼叫的 `connect()`。
+   *
+   * `0` 代表不限制，只有在 `reconnectMs > 0` 時才會生效。
    *
    * @default 0
    */
   reconnectMax?: number;
   /**
-   * 下一次等待時間的倍率。
+   * 下一次等待時間的倍率
    *
-   * `1` 代表固定間隔。小於 `1` 的值會限制為 `1`。
+   * `1` 代表固定間隔，小於 `1` 的值會限制為 `1`。
    *
    * @default 2
    */
   reconnectBackoff?: number;
   /**
-   * 單次等待時間的上限（毫秒），包含抖動。抖動只會縮短等待，不會超過這個上限。
+   * 單次等待時間的上限（毫秒），包含抖動
+   *
+   * 抖動只會縮短等待，不會超過這個上限。
    *
    * `0` 代表不設上限。
    *
@@ -35,24 +39,26 @@ export interface ReconnectOptions {
    */
   reconnectDelayMaxMs?: number;
   /**
-   * 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。
+   * 隨機縮短等待時間的幅度，範圍為 `[0, 1]`
    *
-   * `0` 代表不使用抖動，`1` 代表 full jitter。預設會將等待時間隨機縮短 0%～20%。
+   * `0` 代表不使用抖動，`1` 代表 full jitter。
+   *
+   * 預設會將等待時間隨機縮短 0%～20%。
    *
    * @default 0.2
    */
   reconnectJitter?: number;
   /**
-   * WebSocket 要維持開啟多久（毫秒），才會將重連週期歸零。
+   * WebSocket 要維持開啟多久（毫秒），才會將重連週期歸零
    *
-   * `0` 代表連線 `open` 後立即歸零。這時即使很快斷線，下一次重連也會從第一次等待起算，`reconnectMax` 也不容易累加。
+   * `0` 代表連線 `open` 後立即歸零，這時即使很快斷線，下一次重連也會從第一次等待起算，`reconnectMax` 也不容易累加。
    *
    * @default 5000
    */
   reconnectMinUptimeMs?: number;
 }
 
-/** 省略的欄位填產品預設。已傳入的值（含 `NaN`）原樣保留。 */
+/** 省略的欄位填產品預設。已傳入的值（含 `NaN`）原樣保留 */
 export function resolveReconnectOptions(
   options: ReconnectOptions,
 ): Required<ReconnectOptions> {
@@ -113,22 +119,26 @@ export function reconnectDelay(
   return Number.isFinite(clamped) ? clamped : MAX_TIMEOUT_MS;
 }
 
-/** `WsState` 裡的自動重連欄位。 */
+/** 自動重連狀態 */
 export interface ReconnectState {
   /**
-   * 本輪已排程的自動重連次數。
+   * 本輪已排程的自動重連次數
    *
-   * 非主動斷線並決定重連時就會加一，不是連上之後才加一。連線撐滿 `reconnectMinUptimeMs` 才會歸零。正在等待自動重連時手動呼叫 `connect()`，不會把這一輪的次數歸零。
+   * 非主動斷線並決定重連時就會加一，不是連上之後才加一。
+   *
+   * 連線撐滿 `reconnectMinUptimeMs` 才會歸零。
+   *
+   * 正在等待自動重連時手動呼叫 `connect()`，不會把這一輪的次數歸零。
    */
   reconnectAttempt: number;
   /**
-   * 已達 `reconnectMax`，且最後一次自動重連也失敗。
+   * 已達 `reconnectMax`，且最後一次自動重連也失敗
    *
    * 之後呼叫 `connect()` 或 `disconnect()` 會重設為 `false`。
    */
   reconnectExhausted: boolean;
   /**
-   * 下一次自動重連的預定時間（`Date.now()` 毫秒時間戳）。
+   * 下一次自動重連的預定時間（`Date.now()` 毫秒時間戳）
    *
    * 沒有等待中的重連時為 `0`。
    */

@@ -91,8 +91,8 @@ WebSocket ──→ Events ─────────────→ Event hand
 | 訂閱連線狀態             | `useWsState`   |
 | 監聽 WebSocket 事件      | `useWsEvents`  |
 
-- `useWsActions`：執行 WebSocket 操作（`connect`／`send`／`disconnect`）
-- `useWsState`：讀取連線狀態
+- `useWsActions`：執行 WebSocket 操作，或讀取目前的連線狀態
+- `useWsState`：訂閱連線狀態
 - `useWsEvents`：接收 WebSocket 事件通知
 
 ### 套件負責的事項
@@ -112,7 +112,9 @@ WebSocket ──→ Events ─────────────→ Event hand
 
 ## 連線狀態
 
-`useWsState` 訂閱的是 `WsState`，包含以下欄位：
+`useWsState` 訂閱 `WsState`，狀態改變時重新渲染。`useWsActions()` 的 `getState()` 取得呼叫當下的 `WsState`，不會建立訂閱。
+
+欄位如下：
 
 - `status`
 - `phase`
@@ -252,7 +254,7 @@ MessageEvent
 | ----------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 是經過 `parse` 處理後的結果。                                                                   |
 | `"open"`    | `(event: Event) => void`                       | WebSocket 連線建立成功。                                                                               |
-| `"error"`   | `(event: Event) => void`                       | WebSocket、握手或 `parse` 發生錯誤。握手／設定值取得失敗時會傳入 `{ type: "error" }`，而不是 `Error`。 |
+| `"error"`   | `(event: Event) => void`                       | WebSocket、握手或 `parse` 發生錯誤。握手、設定值取得失敗或 `parse` 擲出時會傳入 `{ type: "error" }`，而不是 `Error`。 |
 | `"close"`   | `(event: CloseEvent) => void`                  | WebSocket 連線關閉。                                                                                   |
 
 ### 訂閱行為
@@ -594,7 +596,7 @@ createWsContext({
 | 名稱           | 型別                                 | 說明                             |
 | -------------- | ------------------------------------ | -------------------------------- |
 | `WsProvider`   | `React.FC<{ children }>`             | 管理子元件樹所使用的 WebSocket。 |
-| `useWsActions` | `() => WsContextValue`               | 提供 WebSocket 操作。            |
+| `useWsActions` | `() => WsActions`                    | 提供 WebSocket 操作。            |
 | `useWsState`   | `() => WsState` 或 `(selector) => T` | 訂閱 WebSocket 連線狀態。        |
 | `useWsEvents`  | `(type, handler) => void`            | 訂閱 WebSocket 事件。            |
 
@@ -612,17 +614,18 @@ createWsContext({
 
 ### `useWsActions`
 
-`useWsActions(): WsContextValue`
-
-如果在對應的 `WsProvider` 外呼叫，會擲出：
-
-```text
-"useWsActions 必須包在對應的 WsProvider 內"
-```
-
-所有方法的參照都保持穩定。
+`useWsActions(): WsActions`
 
 只有使用 `useWsActions` 的元件，不會因為 store 或訊息更新而重新渲染。
+
+```tsx
+const { getState, sendJson } = useWsActions();
+
+function ping() {
+  if (getState().status !== "open") return;
+  sendJson({ type: "ping" });
+}
+```
 
 | 方法         | 簽名                         | 說明                                                                                       |
 | ------------ | ---------------------------- | ------------------------------------------------------------------------------------------ |
@@ -630,7 +633,7 @@ createWsContext({
 | `sendJson`   | `(data: unknown) => boolean` | 先使用 `JSON.stringify` 序列化，再執行 `send`。詳見[傳送訊息](#傳送訊息)。                 |
 | `connect`    | `() => void`                 | 取得設定後建立 WebSocket。詳見[重連 → `connect()` 的替換規則](#connect-的替換規則)。       |
 | `disconnect` | `() => void`                 | 主動關閉 WebSocket。狀態會變成 `phase: "idle"`、`status: "closed"`，且不會觸發自動重連。   |
-| `getState`   | `() => WsState`              | 取得目前的連線狀態，不會建立訂閱。給不需要渲染的場合讀取整份 `WsState`。                   |
+| `getState`   | `() => WsState`              | 取得呼叫當下的 `WsState`，不會建立訂閱。                                                     |
 
 ### `useWsState`
 
@@ -639,12 +642,6 @@ createWsContext({
 ```ts
 useWsState(): WsState
 useWsState<T>(selector: (state: WsState) => T): T
-```
-
-如果在對應的 `WsProvider` 外呼叫，會擲出：
-
-```text
-"useWsState 必須包在對應的 WsProvider 內"
 ```
 
 這個 hook 使用 React 的 `useSyncExternalStore`。
@@ -679,12 +676,6 @@ selector 的回傳值會使用 `Object.is` 與前一次結果比較。
 
 `useWsEvents(type, handler)`
 
-如果在對應的 `WsProvider` 外呼叫，會擲出：
-
-```text
-"useWsEvents 必須包在對應的 WsProvider 內"
-```
-
 事件種類與訂閱行為請參考[事件](#事件)。
 
 ## Next.js 與執行環境
@@ -705,11 +696,11 @@ selector 的回傳值會使用 `Object.is` 與前一次結果比較。
 | `CreateWsContextOptions` | `createWsContext` 的設定選項。                |
 | `MaybeGetter<T>`         | `T \| (() => T)`，可提供靜態值或同步 getter。 |
 | `LivenessOptions`        | `liveness` 的設定。                           |
-| `WsContextValue`         | `useWsActions()` 的回傳型別。                 |
+| `WsActions`              | `useWsActions()` 的回傳型別。                 |
 | `WsEvents`               | 事件名稱與回呼的對應型別。                    |
 | `WsStatus`               | WebSocket 連線狀態。                          |
 | `WsPhase`                | Provider 的連線階段。                         |
-| `WsState`                | 可訂閱的連線狀態。                            |
+| `WsState`                | 連線狀態。`useWsState` 訂閱此值，`getState()` 讀取呼叫當下的值。 |
 
 ## Demo
 

@@ -9,7 +9,7 @@ export function createUseWsActions(ActionsCtx: Context<WsActions | null>) {
   function useWsActions(): WsActions {
     const value = useContext(ActionsCtx);
     if (!value) {
-      throw new Error("useWsActions 必須包在對應的 WsProvider 內");
+      throw new Error("useWsActions 必須在對應的 WsProvider 內");
     }
     return value;
   }
