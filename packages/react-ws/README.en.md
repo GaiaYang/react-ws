@@ -250,12 +250,12 @@ Default `parse` behavior:
 
 ### Event types
 
-| `type`      | Handler                                        | Description                                                                                                                 |
-| ----------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the result after `parse`.                                                                                         |
-| `"open"`    | `(event: Event) => void`                       | The WebSocket connection opened.                                                                                            |
+| `type`      | Handler                                        | Description                                                                                                                                                                |
+| ----------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the result after `parse`.                                                                                                                                        |
+| `"open"`    | `(event: Event) => void`                       | The WebSocket connection opened.                                                                                                                                           |
 | `"error"`   | `(event: Event) => void`                       | A WebSocket, handshake, or `parse` error. For a handshake failure, an option-resolution failure, or a thrown `parse`, the argument is `{ type: "error" }`, not an `Error`. |
-| `"close"`   | `(event: CloseEvent) => void`                  | The WebSocket connection closed.                                                                                            |
+| `"close"`   | `(event: CloseEvent) => void`                  | The WebSocket connection closed.                                                                                                                                           |
 
 ### Subscription behavior
 
@@ -633,7 +633,7 @@ function ping() {
 | `sendJson`   | `(data: unknown) => boolean` | Serializes with `JSON.stringify`, then calls `send`. See [Sending messages](#sending-messages).                                        |
 | `connect`    | `() => void`                 | Reads the options, then opens the WebSocket. See [Reconnect → `connect()` replacement rules](#connect-replacement-rules).              |
 | `disconnect` | `() => void`                 | Closes the WebSocket on purpose. The state becomes `phase: "idle"`, `status: "closed"`, and auto-reconnect does not run.               |
-| `getState`   | `() => WsState`              | Returns the `WsState` when called and does not subscribe.                                              |
+| `getState`   | `() => WsState`              | Returns the `WsState` when called and does not subscribe.                                                                              |
 
 ### `useWsState`
 
@@ -691,15 +691,15 @@ For event types and subscription behavior, see [Events](#events).
 
 The main `react-ws-context` entry exports these types:
 
-| Type                     | Description                                        |
-| ------------------------ | -------------------------------------------------- |
-| `CreateWsContextOptions` | Options for `createWsContext`.                     |
-| `MaybeGetter<T>`         | `T \| (() => T)`. A static value or a sync getter. |
-| `LivenessOptions`        | Options for `liveness`.                            |
-| `WsActions`              | Return type of `useWsActions()`.                   |
-| `WsEvents`               | Map from event name to handler.                    |
-| `WsStatus`               | WebSocket connection state.                        |
-| `WsPhase`                | The Provider's connection phase.                   |
+| Type                     | Description                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| `CreateWsContextOptions` | Options for `createWsContext`.                                                      |
+| `MaybeGetter<T>`         | `T \| (() => T)`. A static value or a sync getter.                                  |
+| `LivenessOptions`        | Options for `liveness`.                                                             |
+| `WsActions`              | Return type of `useWsActions()`.                                                    |
+| `WsEvents`               | Map from event name to handler.                                                     |
+| `WsStatus`               | WebSocket connection state.                                                         |
+| `WsPhase`                | The Provider's connection phase.                                                    |
 | `WsState`                | Connection state. `useWsState` subscribes to it. `getState()` reads it when called. |
 
 ## Demo

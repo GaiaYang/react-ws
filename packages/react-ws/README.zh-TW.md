@@ -250,12 +250,12 @@ MessageEvent
 
 ### 事件種類
 
-| `type`      | 回呼                                           | 說明                                                                                                   |
-| ----------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 是經過 `parse` 處理後的結果。                                                                   |
-| `"open"`    | `(event: Event) => void`                       | WebSocket 連線建立成功。                                                                               |
+| `type`      | 回呼                                           | 說明                                                                                                                  |
+| ----------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` 是經過 `parse` 處理後的結果。                                                                                  |
+| `"open"`    | `(event: Event) => void`                       | WebSocket 連線建立成功。                                                                                              |
 | `"error"`   | `(event: Event) => void`                       | WebSocket、握手或 `parse` 發生錯誤。握手、設定值取得失敗或 `parse` 擲出時會傳入 `{ type: "error" }`，而不是 `Error`。 |
-| `"close"`   | `(event: CloseEvent) => void`                  | WebSocket 連線關閉。                                                                                   |
+| `"close"`   | `(event: CloseEvent) => void`                  | WebSocket 連線關閉。                                                                                                  |
 
 ### 訂閱行為
 
@@ -633,7 +633,7 @@ function ping() {
 | `sendJson`   | `(data: unknown) => boolean` | 先使用 `JSON.stringify` 序列化，再執行 `send`。詳見[傳送訊息](#傳送訊息)。                 |
 | `connect`    | `() => void`                 | 取得設定後建立 WebSocket。詳見[重連 → `connect()` 的替換規則](#connect-的替換規則)。       |
 | `disconnect` | `() => void`                 | 主動關閉 WebSocket。狀態會變成 `phase: "idle"`、`status: "closed"`，且不會觸發自動重連。   |
-| `getState`   | `() => WsState`              | 取得呼叫當下的 `WsState`，不會建立訂閱。                                                     |
+| `getState`   | `() => WsState`              | 取得呼叫當下的 `WsState`，不會建立訂閱。                                                   |
 
 ### `useWsState`
 
@@ -691,15 +691,15 @@ selector 的回傳值會使用 `Object.is` 與前一次結果比較。
 
 `react-ws-context` 主入口提供以下型別：
 
-| 型別                     | 說明                                          |
-| ------------------------ | --------------------------------------------- |
-| `CreateWsContextOptions` | `createWsContext` 的設定選項。                |
-| `MaybeGetter<T>`         | `T \| (() => T)`，可提供靜態值或同步 getter。 |
-| `LivenessOptions`        | `liveness` 的設定。                           |
-| `WsActions`              | `useWsActions()` 的回傳型別。                 |
-| `WsEvents`               | 事件名稱與回呼的對應型別。                    |
-| `WsStatus`               | WebSocket 連線狀態。                          |
-| `WsPhase`                | Provider 的連線階段。                         |
+| 型別                     | 說明                                                             |
+| ------------------------ | ---------------------------------------------------------------- |
+| `CreateWsContextOptions` | `createWsContext` 的設定選項。                                   |
+| `MaybeGetter<T>`         | `T \| (() => T)`，可提供靜態值或同步 getter。                    |
+| `LivenessOptions`        | `liveness` 的設定。                                              |
+| `WsActions`              | `useWsActions()` 的回傳型別。                                    |
+| `WsEvents`               | 事件名稱與回呼的對應型別。                                       |
+| `WsStatus`               | WebSocket 連線狀態。                                             |
+| `WsPhase`                | Provider 的連線階段。                                            |
 | `WsState`                | 連線狀態。`useWsState` 訂閱此值，`getState()` 讀取呼叫當下的值。 |
 
 ## Demo

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-27
+
+### Breaking
+
+- `createWsContext` returns `useWsState` instead of `useWsStore`. The selector contract is unchanged: return a primitive or a stable reference (`Object.is`)
+- Exported type `WsContextValue` is now `WsActions`
+- `useWsActions()` returns `getState(): WsState` instead of `getStatus(): WsStatus`. `getState()` reads the connection state at call time and does not subscribe
+
+### Changed
+
+- Docs (EN / zh-TW): install and quick start come first, then connection state, events, and reconnect. Public JSDoc uses the same wording
+- `setState` matches zustand: listeners are skipped only when the same state reference is returned. Selectors still compare with `Object.is`, so an unchanged primitive does not re-render
+
 ## [0.7.2] - 2026-09-26
 
 ### Changed
