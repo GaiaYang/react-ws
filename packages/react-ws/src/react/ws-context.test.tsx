@@ -143,7 +143,7 @@ describe("createWsContext", () => {
     function Probe() {
       const { status } = useWsStore();
       const phase = useWsStore((s) => s.phase);
-      const { sendJson, disconnect, getStatus } = useWsActions();
+      const { sendJson, disconnect, getState } = useWsActions();
       useWsEvents("message", (data) => {
         messages.push(data);
       });
@@ -155,7 +155,7 @@ describe("createWsContext", () => {
         {
           "data-status": status,
           "data-phase": phase,
-          "data-get": getStatus(),
+          "data-get": getState().status,
           onClick: () => {
             sendJson({ type: "ping" });
             disconnect();

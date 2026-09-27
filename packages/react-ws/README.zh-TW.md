@@ -630,7 +630,7 @@ createWsContext({
 | `sendJson`   | `(data: unknown) => boolean` | 先使用 `JSON.stringify` 序列化，再執行 `send`。詳見[傳送訊息](#傳送訊息)。                 |
 | `connect`    | `() => void`                 | 取得設定後建立 WebSocket。詳見[重連 → `connect()` 的替換規則](#connect-的替換規則)。       |
 | `disconnect` | `() => void`                 | 主動關閉 WebSocket。狀態會變成 `phase: "idle"`、`status: "closed"`，且不會觸發自動重連。   |
-| `getStatus`  | `() => WsStatus`             | 取得目前的 `status`，不會建立訂閱。                                                        |
+| `getState`   | `() => WsState`              | 取得目前的連線狀態，不會建立訂閱。給不需要渲染的場合讀取整份 `WsState`。                   |
 
 ### `useWsStore`
 

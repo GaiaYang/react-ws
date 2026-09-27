@@ -8,7 +8,7 @@ import {
   type ReconnectOptions,
 } from "./reconnect";
 import { clientCloseEvent, detachAndClose, stringifyJson } from "./socket";
-import { createWsStore, type WsStatus, type WsStoreApi } from "./ws-state";
+import { createWsStore, type WsState, type WsStoreApi } from "./ws-state";
 
 /** 連線設定。 */
 export interface WsSessionOptions extends ReconnectOptions {
@@ -69,7 +69,7 @@ export interface WsEvents {
 
 export type WsEventsEmitter = Emitter<WsEvents>;
 
-/** `useWsActions()` 的回傳型別。連線狀態請用 `useWsStore`。 */
+/** `useWsActions()` 的回傳型別。要訂閱並重新渲染請用 `useWsStore`。 */
 export interface WsContextValue {
   /**
    * WebSocket 已連線時送出資料。
@@ -101,8 +101,8 @@ export interface WsContextValue {
    * 狀態變成 `phase: "idle"`、`status: "closed"`。
    */
   disconnect: () => void;
-  /** 取得目前的 `status`，不會建立訂閱。 */
-  getStatus: () => WsStatus;
+  /** 取得目前的連線狀態，不會建立訂閱。給不需要渲染的場合讀取整份 `WsState`。 */
+  getState: () => WsState;
 }
 
 export interface WsSession extends WsContextValue {
@@ -157,10 +157,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   let wsCurrent: WebSocket | null = null;
   let connectGeneration = 0;
-
-  function getStatus(): WsStatus {
-    return store.getState().status;
-  }
 
   function teardown(reason: string): void {
     connectGeneration += 1;
@@ -311,7 +307,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     sendJson,
     connect,
     disconnect,
-    getStatus,
+    getState: store.getState,
     teardown,
   };
 }

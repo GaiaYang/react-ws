@@ -72,14 +72,20 @@ describe("createWsSession", () => {
       status: "open",
       phase: "open",
     });
-    expect(session.getStatus()).toBe("open");
+    expect(session.getState()).toMatchObject({
+      status: "open",
+      phase: "open",
+    });
 
     session.disconnect();
     expect(session.store.getState()).toMatchObject({
       status: "closed",
       phase: "idle",
     });
-    expect(session.getStatus()).toBe("closed");
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
   });
 
   it("omitted reconnect fields back off, cap, jitter, then reset after 5s", () => {

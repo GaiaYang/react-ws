@@ -46,7 +46,7 @@ export function createWsContext(options: CreateWsContextOptions) {
         sendJson: session.sendJson,
         connect: session.connect,
         disconnect: session.disconnect,
-        getStatus: session.getStatus,
+        getState: session.getState,
       }),
       [session],
     );
