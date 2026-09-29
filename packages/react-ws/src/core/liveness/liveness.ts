@@ -26,13 +26,14 @@ export function createLiveness(
   return {
     start(socket) {
       controller?.stop();
-      // 逾時只處理這顆 socket。有 onTimeout 時由 session 立刻收線，不等瀏覽器 onclose
+      // 逾時只處理這顆 socket。有 onTimeout 時由 session 立刻收線，
+      // 即使握手已開始、readyState 已離開 OPEN、onclose 還沒到，也不再等
       controller = createLivenessController(options, () => {
-        if (socket.readyState !== WebSocket.OPEN) return;
         if (onTimeout) {
           onTimeout(socket);
           return;
         }
+        if (socket.readyState !== WebSocket.OPEN) return;
         socket.close();
       });
       controller.start(() => {
