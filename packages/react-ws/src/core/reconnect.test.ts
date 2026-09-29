@@ -238,7 +238,7 @@ describe("reconnect", () => {
     expect(onReconnect).not.toHaveBeenCalled();
   });
 
-  it("construct failure while waiting cancels the timer and schedules the next wait", () => {
+  it("construct failure while waiting reschedules the same attempt", () => {
     const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
@@ -258,7 +258,8 @@ describe("reconnect", () => {
     expect(refs.attempt).toBe(1);
 
     expect(reconnect.onConstructFailure()).toBe("reconnecting");
-    expect(refs.attempt).toBe(2);
+    expect(refs.attempt).toBe(1);
+    expect(refs.exhausted).toBe(false);
     expect(refs.nextAt).toBeGreaterThan(Date.now());
 
     vi.advanceTimersByTime(99);
@@ -267,7 +268,7 @@ describe("reconnect", () => {
     expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("construct failure while waiting stops when reconnectMax is already reached", () => {
+  it("construct failure while the last attempt is waiting does not exhaust it", () => {
     const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
@@ -286,12 +287,15 @@ describe("reconnect", () => {
     expect(reconnect.scheduleAfterClose()).toBe(true);
     expect(refs.attempt).toBe(1);
 
-    expect(reconnect.onConstructFailure()).toBe("stopped");
-    expect(refs.exhausted).toBe(true);
-    expect(refs.nextAt).toBe(0);
+    expect(reconnect.onConstructFailure()).toBe("reconnecting");
+    expect(refs.attempt).toBe(1);
+    expect(refs.exhausted).toBe(false);
+    expect(refs.nextAt).toBeGreaterThan(Date.now());
 
-    vi.advanceTimersByTime(1_000);
+    vi.advanceTimersByTime(99);
     expect(onReconnect).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
   it("construct failure after the timer fired is stopped", () => {

@@ -17,15 +17,23 @@ const DISABLED_LIVENESS: Liveness = {
   onMessage() {},
 };
 
-export function createLiveness(options: LivenessOptions): Liveness {
+export function createLiveness(
+  options: LivenessOptions,
+  onTimeout?: (socket: WebSocket) => void,
+): Liveness {
   let controller: LivenessController | null = null;
 
   return {
     start(socket) {
       controller?.stop();
-      // 逾時只關這顆 socket，不可碰到之後重連的新線
+      // 逾時只處理這顆 socket。有 onTimeout 時由 session 立刻收線，不等瀏覽器 onclose
       controller = createLivenessController(options, () => {
-        if (socket.readyState === WebSocket.OPEN) socket.close();
+        if (socket.readyState !== WebSocket.OPEN) return;
+        if (onTimeout) {
+          onTimeout(socket);
+          return;
+        }
+        socket.close();
       });
       controller.start(() => {
         if (socket.readyState !== WebSocket.OPEN) return;
@@ -49,6 +57,7 @@ export function createLiveness(options: LivenessOptions): Liveness {
 
 export function resolveLiveness(
   options: LivenessOptions | undefined,
+  onTimeout?: (socket: WebSocket) => void,
 ): Liveness {
-  return options ? createLiveness(options) : DISABLED_LIVENESS;
+  return options ? createLiveness(options, onTimeout) : DISABLED_LIVENESS;
 }

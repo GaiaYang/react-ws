@@ -430,7 +430,7 @@ create new socket
 
 若這次嘗試已達 `reconnectMax`，`reconnectExhausted` 為 `true`。還沒到上限時維持 `false`，但也不會再自動重試。
 
-如果仍在等待自動重連計時器，則會取消目前的計時器，並重新排程下一次重連。
+如果仍在等待自動重連計時器，則會取消目前的計時器，並以同一個 `reconnectAttempt` 重新排程。手動失敗不計入 `reconnectMax`。
 
 也就是說，提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。
 
@@ -476,7 +476,7 @@ nextReconnectAt - Date.now()
 
 如果伺服器接受連線後立即斷線，建議保持 `reconnectMinUptimeMs > 0`。
 
-如果 WebSocket 很快就斷線，下一次重連會重新從第一次等待時間開始計算，`reconnectMax` 也會重新計數。
+還沒歸零就斷線時，下一次仍沿用這一輪的等待與 `reconnectMax`。只有已經歸零之後再斷線，才會從第一次等待重新計算。
 
 `disconnect()` 會立即將重連週期歸零。
 
@@ -492,9 +492,9 @@ nextReconnectAt - Date.now()
 
 啟用 `liveness` 後，Provider 會依指定的時間間隔送出應用層 ping。
 
-如果在 `timeoutMs` 內沒有收到符合條件的 pong，則會關閉 WebSocket。
+如果在 `timeoutMs` 內沒有收到符合條件的 pong，會立刻把這條連線當成非主動斷線：store 離開 `open`，並送出 `"close"`（reason 為 `"liveness timeout"`）。這一步不等瀏覽器的關閉握手。
 
-當 `reconnectMs > 0` 時，這次關閉會被視為非主動斷線，並觸發自動重連。
+當 `reconnectMs > 0` 時，這次關閉會排自動重連。
 
 ```text
 ping
@@ -566,7 +566,7 @@ createWsContext({
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | 見[訊息解析](#訊息解析) | 將原始 `MessageEvent.data` 轉換為應用程式資料。擲出例外時會觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。   |
 | `liveness`             | `LivenessOptions`                         | 無                      | 應用層心跳機制。未設定時不會啟用。                                                                                        |
 
-`url` 與 `protocols` 的 getter 必須同步執行，不可使用 `await` 或呼叫 hooks。
+`url` 與 `protocols` 的 getter 必須同步執行，不可使用 `await` 或呼叫 hooks。若 getter 同步呼叫 `disconnect()` 或 `connect()`，以那次呼叫為準。
 
 套件不負責驗證機制，Token 請由應用程式自行提供。
 

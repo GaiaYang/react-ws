@@ -165,7 +165,7 @@ export interface Reconnect {
   /**
    * 建構失敗時。
    * - 計時器已觸發 → 停自動重試；已達 `reconnectMax` 時 `reconnectExhausted` 為 `true`
-   * - 仍在等待 → 取消倒數並再排下一次（提前試失敗仍繼續這一輪）
+   * - 仍在等待 → 取消倒數，以同一個 `attempt` 再排（手動失敗不計次）
    * - 否則不動
    */
   onConstructFailure: () => "stopped" | "reconnecting" | "noop";
@@ -242,6 +242,11 @@ export function createReconnect(
     }
     attempt += 1;
     fromTimer = true;
+    armTimer();
+    return true;
+  };
+
+  const armTimer = () => {
     const delay = reconnectDelay(attempt, options);
     apply({
       reconnectAttempt: attempt,
@@ -251,7 +256,6 @@ export function createReconnect(
       timer = null;
       onReconnect();
     }, delay);
-    return true;
   };
 
   return {
@@ -297,10 +301,8 @@ export function createReconnect(
       if (clearTimerTrigger()) return "stopped";
       if (fromTimer && timer != null) {
         clearTimer();
-        if (schedule()) return "reconnecting";
-        fromTimer = false;
-        apply({ nextReconnectAt: 0 });
-        return "stopped";
+        armTimer();
+        return "reconnecting";
       }
       return "noop";
     },

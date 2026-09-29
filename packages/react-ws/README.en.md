@@ -430,7 +430,7 @@ If that call came from an **already-fired auto-reconnect timer**, auto-reconnect
 
 If that attempt has already reached `reconnectMax`, `reconnectExhausted` is `true`. Below the cap it stays `false`, and auto-reconnect still stops.
 
-If an auto-reconnect timer is still waiting, that timer is cancelled and the next reconnect is scheduled again.
+If an auto-reconnect timer is still waiting, that timer is cancelled and the same `reconnectAttempt` is scheduled again. A failed manual `connect()` does not count toward `reconnectMax`.
 
 An early `connect()` that fails does not end the current auto-reconnect cycle.
 
@@ -476,7 +476,7 @@ With `reconnectMinUptimeMs: 0`, the cycle resets as soon as the WebSocket fires 
 
 If the server accepts the connection and then closes it immediately, keep `reconnectMinUptimeMs > 0`.
 
-If the WebSocket closes soon after, the next reconnect starts again from the first wait, and `reconnectMax` starts counting again.
+If the WebSocket closes before that reset, the next reconnect keeps the current wait and `reconnectMax` count. The wait starts over from the first delay only after the cycle has already reset.
 
 `disconnect()` resets the cycle immediately.
 
@@ -492,9 +492,9 @@ It detects a WebSocket whose `readyState` is still open, but that no longer resp
 
 When `liveness` is enabled, the Provider sends an application-layer ping on the given interval.
 
-If no matching pong arrives within `timeoutMs`, it closes the WebSocket.
+If no matching pong arrives within `timeoutMs`, the connection is treated as an unintentional close immediately: the store leaves `open`, and a `"close"` event is emitted with reason `"liveness timeout"`. This does not wait for the browser close handshake.
 
-When `reconnectMs > 0`, that close is treated as an unintentional close and triggers auto-reconnect.
+When `reconnectMs > 0`, that close schedules auto-reconnect.
 
 ```text
 ping
@@ -566,7 +566,7 @@ To use different options, call `createWsContext` again and create another contex
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | see [Message parsing](#message-parsing) | Maps raw `MessageEvent.data` to application data. A throw fires `"error"`, does not fire `"message"`, and does not close the WebSocket.                         |
 | `liveness`             | `LivenessOptions`                         | none                                    | Application-layer heartbeat. Disabled when omitted.                                                                                                             |
 
-Getters for `url` and `protocols` must run synchronously. Do not `await` or call hooks inside them.
+Getters for `url` and `protocols` must run synchronously. Do not `await` or call hooks inside them. If a getter synchronously calls `disconnect()` or `connect()`, that call wins.
 
 This package does not handle authentication. The application supplies the token.
 
