@@ -7,11 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-30
+
 ### Fixed
 
 - A fired reconnect that fails before a socket exists sets `reconnectExhausted` when that attempt has already reached `reconnectMax`. Below the cap, auto-reconnect still stops and the flag stays `false`
 - A failed manual `connect()` while an auto-reconnect wait is pending reschedules that same attempt and does not count toward `reconnectMax`
-- Liveness timeout leaves `open` and schedules reconnect without waiting for the browser `onclose`. The `"close"` reason is `"liveness timeout"`
+- Liveness timeout leaves `open` and schedules reconnect without waiting for the browser `onclose`, including when the close handshake has already started. The `"close"` reason is `"liveness timeout"`
 - `disconnect()` or `connect()` called from the `url` / `protocols` getter is not overwritten by the outer `connect()`
 
 ## [0.8.0] - 2026-09-27
