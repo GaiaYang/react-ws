@@ -428,6 +428,8 @@ If that call came from an **already-fired auto-reconnect timer**, auto-reconnect
 }
 ```
 
+If that attempt has already reached `reconnectMax`, `reconnectExhausted` is `true`. Below the cap it stays `false`, and auto-reconnect still stops.
+
 If an auto-reconnect timer is still waiting, that timer is cancelled and the next reconnect is scheduled again.
 
 An early `connect()` that fails does not end the current auto-reconnect cycle.

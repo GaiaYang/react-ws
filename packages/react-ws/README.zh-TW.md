@@ -428,6 +428,8 @@ create new socket
 }
 ```
 
+若這次嘗試已達 `reconnectMax`，`reconnectExhausted` 為 `true`。還沒到上限時維持 `false`，但也不會再自動重試。
+
 如果仍在等待自動重連計時器，則會取消目前的計時器，並重新排程下一次重連。
 
 也就是說，提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。

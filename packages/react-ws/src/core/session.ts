@@ -108,6 +108,8 @@ export interface WsActions {
    *
    * 若這次呼叫來自已觸發的自動重連計時器，會停止自動重連，狀態變成 `status: "closed"`、`phase: "stopped"`。
    *
+   * 已達 `reconnectMax` 時 `reconnectExhausted` 為 `true`。
+   *
    * 若仍在等待自動重連計時器，會取消目前的等待並重新排程。
    *
    * 提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。

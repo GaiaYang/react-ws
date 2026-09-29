@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A fired reconnect that fails before a socket exists sets `reconnectExhausted` when that attempt has already reached `reconnectMax`. Below the cap, auto-reconnect still stops and the flag stays `false`
+
 ## [0.8.0] - 2026-09-27
 
 ### Breaking

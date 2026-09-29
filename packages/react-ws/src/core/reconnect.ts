@@ -156,11 +156,15 @@ export interface Reconnect {
   onConnectBegin: () => boolean;
   onOpen: () => void;
   scheduleAfterClose: () => boolean;
-  /** 計時器已觸發、這次排程已消耗，但不是使用者主動放棄 */
+  /**
+   * 計時器已觸發、這次排程已消耗，但不是使用者主動放棄。
+   *
+   * `attempt` 已達 `reconnectMax` 時，一併把 `reconnectExhausted` 設為 `true`。
+   */
   clearTimerTrigger: () => boolean;
   /**
    * 建構失敗時。
-   * - 計時器已觸發 → 停自動重試
+   * - 計時器已觸發 → 停自動重試；已達 `reconnectMax` 時 `reconnectExhausted` 為 `true`
    * - 仍在等待 → 取消倒數並再排下一次（提前試失敗仍繼續這一輪）
    * - 否則不動
    */
@@ -203,8 +207,15 @@ export function createReconnect(
   const clearTimerTrigger = (): boolean => {
     if (!fromTimer || timer != null) return false;
     fromTimer = false;
-    // 時間點已過，清掉以免 UI 還在倒數
-    apply({ nextReconnectAt: 0 });
+    const reconnectMax = options.reconnectMax;
+    // 時間點已過，清掉以免 UI 還在倒數。這次已是上限內最後一次時，建構失敗也算用盡
+    apply(
+      typeof reconnectMax === "number" &&
+        reconnectMax > 0 &&
+        attempt >= reconnectMax
+        ? { nextReconnectAt: 0, reconnectExhausted: true }
+        : { nextReconnectAt: 0 },
+    );
     return true;
   };
 

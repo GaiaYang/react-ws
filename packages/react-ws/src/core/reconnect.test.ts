@@ -311,6 +311,52 @@ describe("reconnect", () => {
 
     expect(reconnect.onConstructFailure()).toBe("stopped");
     expect(refs.nextAt).toBe(0);
+    expect(refs.exhausted).toBe(false);
+  });
+
+  it("fired construct failure at reconnectMax sets exhausted", () => {
+    const { refs, apply } = createApply();
+    const onReconnect = vi.fn();
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 1 },
+      apply,
+    );
+    reconnect.bindOnReconnect(onReconnect);
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    vi.advanceTimersByTime(100);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    expect(reconnect.onConstructFailure()).toBe("stopped");
+    expect(refs.attempt).toBe(1);
+    expect(refs.exhausted).toBe(true);
+    expect(refs.nextAt).toBe(0);
+
+    vi.advanceTimersByTime(1_000);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    reconnect.onConnectBegin();
+    expect(refs.attempt).toBe(0);
+    expect(refs.exhausted).toBe(false);
+  });
+
+  it("fired construct failure below reconnectMax stops without exhausted", () => {
+    const { refs, apply } = createApply();
+    const reconnect = createReconnect(
+      { reconnectMs: 100, reconnectMax: 2 },
+      apply,
+    );
+    reconnect.bindOnReconnect(vi.fn());
+
+    reconnect.onConnectBegin();
+    expect(reconnect.scheduleAfterClose()).toBe(true);
+    vi.advanceTimersByTime(100);
+
+    expect(reconnect.onConstructFailure()).toBe("stopped");
+    expect(refs.attempt).toBe(1);
+    expect(refs.exhausted).toBe(false);
+    expect(refs.nextAt).toBe(0);
   });
 
   it("construct failure outside a reconnect cycle is a no-op", () => {
