@@ -248,6 +248,8 @@ MessageEvent
 - 如果 JSON 解析失敗，則回傳原始字串
 - 非字串資料則原樣回傳
 
+若 `parse` 同步呼叫 `disconnect()` 或 `connect()`，返回時這顆 socket 已不是現役，就不會觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"error"`。`connect()` 已換線之後的擲出，不會算到新 socket 的 `"error"`。
+
 ### 事件種類
 
 | `type`      | 回呼                                           | 說明                                                                                                                                                                                                                            |
@@ -273,13 +275,13 @@ MessageEvent
 
 ### 事件順序與失敗行為
 
-| 情況                                   | `"error"`                                         | `"close"`                       | WebSocket／store                                                                                                                                                                                                                                     |
-| -------------------------------------- | ------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 非主動斷線                             | 可能觸發。原生 WebSocket 通常會先觸發 `"error"`。 | 會觸發                          | 先更新 `status: "closed"` 與對應的 `phase`，再執行 `"close"` handler                                                                                                                                                                                 |
-| `disconnect()`／Provider 卸載          | 不會觸發                                          | WebSocket 存在時會觸發          | 先更新 store，再關閉 WebSocket                                                                                                                                                                                                                       |
-| 握手／設定值取得／`new WebSocket` 失敗 | 會觸發，參數帶 `source`、`message`、`cause`       | 不會觸發                        | 不會替換既有 WebSocket。已觸發的自動重連計時器若失敗，未達 `reconnectMax` 會再排且 phase 維持 `reconnecting`；達到上限才設為 `closed`／`stopped`，且 `reconnectExhausted` 為 `true`。仍在等待則以同一個 `reconnectAttempt` 再排。詳見[重連](#重連)。 |
-| `parse` 擲出例外                       | 會觸發                                            | 不會觸發                        | 不會觸發 `"message"`，也不會關閉 WebSocket                                                                                                                                                                                                           |
-| `connect()` 成功替換舊連線             | 不會觸發                                          | 會觸發，reason 為 `"reconnect"` | 先關閉舊 WebSocket，再進入新的 `connecting` 狀態。詳細替換規則請參考[重連 → `connect()` 的替換規則](#connect-的替換規則)。                                                                                                                           |
+| 情況                                   | `"error"`                                         | `"close"`                       | WebSocket／store                                                                                                                                                                                                                                                                  |
+| -------------------------------------- | ------------------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 非主動斷線                             | 可能觸發。原生 WebSocket 通常會先觸發 `"error"`。 | 會觸發                          | 先更新 `status: "closed"` 與對應的 `phase`，再執行 `"close"` handler                                                                                                                                                                                                              |
+| `disconnect()`／Provider 卸載          | 不會觸發                                          | WebSocket 存在時會觸發          | 先更新 store，再關閉 WebSocket                                                                                                                                                                                                                                                    |
+| 握手／設定值取得／`new WebSocket` 失敗 | 會觸發，參數帶 `source`、`message`、`cause`       | 不會觸發                        | 不會替換既有 WebSocket。已觸發的自動重連計時器若失敗，未達 `reconnectMax` 會再排且 phase 維持 `reconnecting`；達到上限才設為 `closed`／`stopped`，且 `reconnectExhausted` 為 `true`。仍在等待則以同一個 `reconnectAttempt` 再排。詳見[重連](#重連)。                              |
+| `parse` 擲出例外                       | 會觸發                                            | 不會觸發                        | 不會觸發 `"message"`，也不會關閉 WebSocket                                                                                                                                                                                                                                        |
+| `connect()` 成功替換舊連線             | 不會觸發                                          | 會觸發，reason 為 `"reconnect"` | `"close"` 回呼前 `status` 已是 `closed`（不是 `open`），所以 `send` 回 `false`。回呼返回後，若這次 `connect()` 仍擁有這顆 socket，`status` 才變成 `"connecting"`。回呼裡的 `connect()` 若建構失敗，已建好的那顆會留下。詳見[重連 → `connect()` 的替換規則](#connect-的替換規則)。 |
 
 ## 重連
 
@@ -401,9 +403,9 @@ create new socket
 
 新的 WebSocket 會先建立。
 
-只有在新 WebSocket 建構成功後，才會關閉舊的 WebSocket，並觸發舊 socket 的 `"close"` 事件（reason 為 `"reconnect"`）。
+只有在新 WebSocket 建構成功後，才會關閉舊的 WebSocket。`"close"` 回呼執行前，`status` 已是 `closed`，不是 `open`，所以 `send` 回 `false`。reason 為 `"reconnect"`。這次 close 仍屬於舊線。
 
-接著將 `status` 設為 `"connecting"`。
+回呼返回後，若這次 `connect()` 仍擁有這次嘗試，`status` 才變成 `"connecting"`。若回呼裡的 `connect()` 在建立 socket 前就失敗，這次 `connect()` 已經建好的 socket 會留下並進入 `connecting`。回呼裡的 `disconnect()` 仍然優先。
 
 如果 `connect()` 是由已觸發的自動重連計時器執行，`phase` 會維持為 `"reconnecting"`。
 
@@ -431,6 +433,8 @@ create new socket
 此時 `reconnectExhausted` 為 `true`。
 
 如果仍在等待自動重連計時器，則會取消目前的計時器，並以同一個 `reconnectAttempt` 重新排程。手動失敗不計入 `reconnectMax`。
+
+若這次手動 `connect()` 取代的是等待中的計時器，而新的握手在 `open` 之前關閉，會以同一個 `reconnectAttempt` 再排。`reconnectExhausted` 維持 `false`。
 
 也就是說，提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續。
 
@@ -474,6 +478,8 @@ nextReconnectAt - Date.now()
 
 當 `reconnectMinUptimeMs: 0` 時，WebSocket 觸發 `open` 後立即歸零。
 
+`reconnectMinUptimeMs` 不是有限數時，沿用預設 `5000`。不會在 `open` 當下歸零，穩定連線也不會永遠留著上一輪的次數。
+
 如果伺服器接受連線後立即斷線，建議保持 `reconnectMinUptimeMs > 0`。
 
 還沒歸零就斷線時，下一次仍沿用這一輪的等待與 `reconnectMax`。只有已經歸零之後再斷線，才會從第一次等待重新計算。
@@ -516,7 +522,9 @@ isPong()
 
 如果 `ping` 擲出例外，該次 ping 不會送出，但仍會開始等待 pong。
 
-如果超過 `timeoutMs` 仍未收到符合條件的 pong，WebSocket 一樣會被關閉。
+`intervalMs` 與 `timeoutMs` 必須是大於 `0` 的有限數。`0`、負數、非有限數不會送 ping，也不會關閉 socket。`"open"` 仍會觸發，接著觸發 `"error"`，`source` 為 `"construct"`，`message` 為 `"invalid liveness"`。
+
+`intervalMs` 與 `timeoutMs` 都是大於 `0` 的有限數時，超過 `timeoutMs` 仍未收到符合條件的 pong，WebSocket 會被關閉。
 
 socket 已經 open 時會先觸發 `"open"`，再送出第一個 ping。若這個 ping 同步 `disconnect()`，順序是 `"open"` 然後 close（reason 為 `"client disconnect"`），而且不會送出 ping。若同步 `connect()` 換線，已 open 的那顆仍會先 `"open"`，接著 close reason 為 `"reconnect"`。進入 `onopen` 時已經不是現役的握手，以及換上去、尚未 open 的那顆，不會觸發 `"open"`。
 
@@ -563,7 +571,7 @@ createWsContext({
 | `reconnectBackoff`     | `number`                                  | `2`                     | 下一次等待時間的倍率。`2` 代表加倍，`1` 代表固定間隔，小於 `1` 的值會限制為 `1`。                                         |
 | `reconnectDelayMaxMs`  | `number`                                  | `30000`                 | 單次等待時間的上限（毫秒），包含抖動。`0` 代表不設上限。                                                                  |
 | `reconnectJitter`      | `number`                                  | `0.2`                   | 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。預設會將實際等待時間隨機縮短 0%～20%。`1` 代表 full jitter，`0` 代表不使用抖動。 |
-| `reconnectMinUptimeMs` | `number`                                  | `5000`                  | WebSocket 需要維持開啟多久才會將重連週期歸零（毫秒）。`0` 代表 `open` 後立即歸零。                                        |
+| `reconnectMinUptimeMs` | `number`                                  | `5000`                  | WebSocket 需要維持開啟多久才會將重連週期歸零（毫秒）。`0` 代表 `open` 後立即歸零。非有限數沿用這個預設。                  |
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | 見[訊息解析](#訊息解析) | 將原始 `MessageEvent.data` 轉換為應用程式資料。擲出例外時會觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。   |
 | `liveness`             | `LivenessOptions`                         | 無                      | 應用層心跳機制。未設定時不會啟用。                                                                                        |
 
@@ -688,8 +696,8 @@ selector 的回傳值會使用 `Object.is` 與前一次結果比較。
 - 需要 React 18+ 與 `useSyncExternalStore`。
 - 沒有執行期 npm 依賴。
 - 需要 `globalThis.WebSocket`。
-- 如果執行環境沒有 `WebSocket`，`connect()` 不會建立連線。
-- 如果該次 `connect()` 是由已觸發的自動重連計時器執行，store 會變成 `status: "closed"`、`phase: "stopped"`。
+- 如果執行環境沒有 `WebSocket`，`connect()` 不會建立連線，並觸發 `"error"`（`source` 為 `"construct"`，`message` 為 `"WebSocket is undefined"`）。
+- 沒有現役 socket 時，包含第一次 `connect()` 與已觸發的自動重連計時器，store 會變成 `status: "closed"`、`phase: "stopped"`。已有 socket 則維持不變。
 - 套件入口包含 `"use client"`，適用於 Next.js App Router；一般 SPA 則會忽略此設定。
 
 ## 匯出型別

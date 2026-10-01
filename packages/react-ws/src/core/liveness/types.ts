@@ -2,9 +2,17 @@ import type { MaybeGetter } from "../maybe-getter";
 
 /** `liveness` 的設定 */
 export interface LivenessOptions {
-  /** Ping 的發送間隔（毫秒） */
+  /**
+   * Ping 的發送間隔（毫秒）
+   *
+   * 必須是大於 `0` 的有限數。`0`、負數、非有限數不會啟動 liveness。
+   */
   intervalMs: number;
-  /** 等待 Pong 的時間（毫秒） */
+  /**
+   * 等待 Pong 的時間（毫秒）
+   *
+   * 必須是大於 `0` 的有限數。`0`、負數、非有限數不會啟動 liveness。
+   */
   timeoutMs: number;
   /**
    * 要送出的 Ping

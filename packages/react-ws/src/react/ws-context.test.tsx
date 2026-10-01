@@ -970,7 +970,7 @@ describe("createWsContext", () => {
     expect(phase()).toBe("reconnecting");
   });
 
-  it("connect is a no-op without WebSocket", async () => {
+  it("connect without WebSocket reports failure instead of staying idle", async () => {
     vi.stubGlobal("WebSocket", undefined);
 
     const errors: WsErrorEvent[] = [];
@@ -985,26 +985,38 @@ describe("createWsContext", () => {
     function Probe() {
       api = useWsActions();
       const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
       useWsEvents("error", (event) => {
         errors.push(event);
       });
-      return createElement("div", null, status);
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
     }
 
-    const { getByText } = render(
+    const { container } = render(
       createElement(WsProvider, null, createElement(Probe)),
     );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
 
     expect(MockWebSocket.instances).toHaveLength(0);
-    expect(getByText("idle")).toBeTruthy();
-    expect(errors).toHaveLength(0);
+    expect(status()).toBe("closed");
+    expect(phase()).toBe("stopped");
+    expect(errors).toMatchObject([
+      { source: "construct", message: "WebSocket is undefined" },
+    ]);
 
     await act(async () => {
       api.connect();
     });
     expect(MockWebSocket.instances).toHaveLength(0);
-    expect(getByText("idle")).toBeTruthy();
-    expect(errors).toHaveLength(0);
+    expect(status()).toBe("closed");
+    expect(phase()).toBe("stopped");
+    expect(errors).toHaveLength(2);
   });
 
   it("synthetic close and error work without Event/CloseEvent constructors", async () => {

@@ -53,10 +53,14 @@ export interface ReconnectOptions {
    *
    * `0` 代表連線 `open` 後立即歸零，這時即使很快斷線，下一次重連也會從第一次等待起算，`reconnectMax` 也不容易累加。
    *
+   * 非有限數沿用預設 `5000`，不會立刻歸零，也不會永遠不歸零。
+   *
    * @default 5000
    */
   reconnectMinUptimeMs?: number;
 }
+
+const DEFAULT_RECONNECT_MIN_UPTIME_MS = 5000;
 
 /** 省略的欄位填產品預設。已傳入的值（含 `NaN`）原樣保留 */
 export function resolveReconnectOptions(
@@ -68,7 +72,7 @@ export function resolveReconnectOptions(
     reconnectBackoff = 2,
     reconnectDelayMaxMs = 30_000,
     reconnectJitter = 0.2,
-    reconnectMinUptimeMs = 5000,
+    reconnectMinUptimeMs = DEFAULT_RECONNECT_MIN_UPTIME_MS,
   } = options;
   return {
     reconnectMs,
@@ -179,6 +183,8 @@ export function createReconnect(
 ): Reconnect {
   let intentionalClose = false;
   let fromTimer = false;
+  // 等待中的手動 connect 取消了還沒跑的那次。握手在 open 前失敗時，用同一個 attempt 再排。
+  let reusePendingAttempt = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let uptimeTimer: ReturnType<typeof setTimeout> | null = null;
   let onReconnect = () => {};
@@ -230,7 +236,14 @@ export function createReconnect(
       !Number.isFinite(reconnectMs) ||
       reconnectMs <= 0
     ) {
+      reusePendingAttempt = false;
       return false;
+    }
+    if (reusePendingAttempt) {
+      reusePendingAttempt = false;
+      fromTimer = true;
+      armTimer();
+      return true;
     }
     if (
       typeof reconnectMax === "number" &&
@@ -268,6 +281,7 @@ export function createReconnect(
       clearUptimeTimer();
       intentionalClose = false;
       fromTimer = false;
+      reusePendingAttempt = inCycle && !fired;
       if (inCycle) {
         apply({ nextReconnectAt: 0 });
       } else {
@@ -281,10 +295,13 @@ export function createReconnect(
       return fired;
     },
     onOpen() {
+      reusePendingAttempt = false;
       const minUptime = options.reconnectMinUptimeMs;
-      // NaN 會讓 setTimeout 立刻觸發，短命連線保護就沒了
-      if (!Number.isFinite(minUptime)) return;
-      if (minUptime <= 0) {
+      // 非有限數不是「永遠不歸零」；沿用文件上的預設，避免 setTimeout(NaN) 立刻歸零
+      const delay = Number.isFinite(minUptime)
+        ? minUptime
+        : DEFAULT_RECONNECT_MIN_UPTIME_MS;
+      if (delay <= 0) {
         resetCycle();
         return;
       }
@@ -293,7 +310,7 @@ export function createReconnect(
           uptimeTimer = null;
           resetCycle();
         },
-        Math.min(minUptime, MAX_TIMEOUT_MS),
+        Math.min(delay, MAX_TIMEOUT_MS),
       );
     },
     scheduleAfterClose: schedule,
@@ -314,6 +331,7 @@ export function createReconnect(
     cancel() {
       intentionalClose = true;
       fromTimer = false;
+      reusePendingAttempt = false;
       clearTimer();
       clearUptimeTimer();
       attempt = 0;

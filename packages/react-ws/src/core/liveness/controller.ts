@@ -1,6 +1,19 @@
 import { MAX_TIMEOUT_MS } from "../socket";
 import type { LivenessOptions } from "./types";
 
+/** `0`、負數、非有限數都不是有效的 ping／pong 間隔 */
+export function livenessDelaysOk(
+  intervalMs: number,
+  timeoutMs: number,
+): boolean {
+  return (
+    Number.isFinite(intervalMs) &&
+    intervalMs > 0 &&
+    Number.isFinite(timeoutMs) &&
+    timeoutMs > 0
+  );
+}
+
 export interface LivenessController {
   start: (sendPing: () => void) => void;
   stop: () => void;
@@ -30,7 +43,8 @@ export function createLivenessController(
     if (stopped) return;
     // 已在等 pong 勿重設，否則 timeoutMs > intervalMs 時逾時永遠不到
     if (timeoutId != null) return;
-    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return;
+    // 0、負數、非有限數不是「立刻判死」，也不是靜默關掉後還繼續 ping
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return;
     timeoutId = setTimeout(
       () => {
         timeoutId = null;
@@ -59,9 +73,11 @@ export function createLivenessController(
     start(sendPing) {
       stopped = false;
       sendPingRef = sendPing;
+      // 無效間隔不送第一次 ping，否則看起來像心跳還在，其實沒有判死
+      if (!livenessDelaysOk(intervalMs, timeoutMs)) return;
       // setInterval 不會立刻跑，需先 tick 一次
       tick();
-      if (stopped || !Number.isFinite(intervalMs) || intervalMs < 0) return;
+      if (stopped) return;
       intervalId = setInterval(tick, Math.min(intervalMs, MAX_TIMEOUT_MS));
     },
     stop() {

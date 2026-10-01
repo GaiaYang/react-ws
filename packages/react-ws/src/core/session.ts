@@ -1,4 +1,5 @@
 import { createEmitter, type Emitter } from "./emitter";
+import { livenessDelaysOk } from "./liveness/controller";
 import { resolveLiveness } from "./liveness/liveness";
 import type { LivenessOptions } from "./liveness/types";
 import { resolveMaybeGetter, type MaybeGetter } from "./maybe-getter";
@@ -72,7 +73,7 @@ export interface WsEvents {
   /**
    * 收到訊息
    *
-   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。
+   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"error"`。`connect()` 已換線之後的擲出，不會算到新 socket 的 `"error"`。
    * @param event 這次的 `MessageEvent`。
    */
   message: (parsed: unknown, event: MessageEvent) => void;
@@ -280,9 +281,19 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   function connect(): void {
     if (typeof globalThis.WebSocket === "undefined") {
-      if (reconnect.clearTimerTrigger()) {
-        store.setState({ status: "closed", phase: "stopped" });
+      const fired = reconnect.clearTimerTrigger();
+      const failure = internalError(
+        "construct",
+        new Error("WebSocket is undefined"),
+      );
+      // 現役 socket 還在就留著。沒有的話不能停在 idle，否則和「還沒 connect」一樣。
+      if (wsCurrent != null && !fired) {
+        emitter.emit("error", failure);
+        return;
       }
+      if (!fired) reconnect.cancel();
+      store.setState({ status: "closed", phase: "stopped" });
+      emitter.emit("error", failure);
       return;
     }
 
@@ -333,12 +344,20 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       clearConnectTimer();
       wsCurrent = null;
       detachAndClose(prev);
-      // close 仍屬舊線；若先 set connecting，handler 會當成新握手的 close
+      // 舊線已死。status 先離開 open，close 回呼才不會用 status === "open" 去送。
+      // phase 用這次嘗試自己的：手動是 connecting，已觸發的自動重連維持 reconnecting。
+      store.setState({
+        status: "closed",
+        phase: fromReconnect ? "reconnecting" : "connecting",
+      });
       emitter.emit("close", clientCloseEvent("reconnect"));
     }
 
-    // close handler 可能已 disconnect／再次 connect，這一輪 socket 不能再掛
-    if (generation !== connectGeneration) {
+    // disconnect 或已接上的 connect 才算接管。建構失敗沒有 socket，這顆要留著。
+    if (
+      generation !== connectGeneration &&
+      (wsCurrent != null || store.getState().phase === "idle")
+    ) {
       detachAndClose(ws);
       return;
     }
@@ -358,6 +377,16 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       // 已經 open 的這顆先通知，第一個 ping 不得早於訂閱者
       emitter.emit("open", event);
       if (wsCurrent !== ws) return;
+      if (
+        livenessOptions &&
+        !livenessDelaysOk(livenessOptions.intervalMs, livenessOptions.timeoutMs)
+      ) {
+        emitter.emit(
+          "error",
+          internalError("construct", new Error("invalid liveness")),
+        );
+        return;
+      }
       liveness.start(ws);
     };
 
@@ -367,10 +396,16 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       try {
         data = parse(event.data);
       } catch (cause) {
+        // 新 socket 已接手時，這顆舊訊息的失敗不能算到它頭上。
+        // 斷線後沒有接手者，parse 的失敗仍要送出去。
+        if (wsCurrent !== ws && wsCurrent != null) return;
         emitter.emit("error", internalError("parse", cause));
         return;
       }
+      // parse／isPong 可能已斷線或換線，舊訊息不能再送
+      if (wsCurrent !== ws) return;
       liveness.onMessage(data);
+      if (wsCurrent !== ws) return;
       emitter.emit("message", data, event);
     };
 

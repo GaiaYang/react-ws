@@ -324,41 +324,53 @@ describe("liveness", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("non-finite timeoutMs does not close immediately", () => {
-    const close = vi.fn();
+  it.each([
+    { intervalMs: 1_000, timeoutMs: Number.NaN },
+    { intervalMs: 1_000, timeoutMs: Number.POSITIVE_INFINITY },
+    { intervalMs: 1_000, timeoutMs: -1 },
+    { intervalMs: 1_000, timeoutMs: 0 },
+    { intervalMs: Number.NaN, timeoutMs: 10_000 },
+    { intervalMs: Number.POSITIVE_INFINITY, timeoutMs: 10_000 },
+    { intervalMs: -1, timeoutMs: 10_000 },
+  ])(
+    "invalid liveness delays do not ping or close ($intervalMs / $timeoutMs)",
+    ({ intervalMs, timeoutMs }) => {
+      const close = vi.fn();
+      const send = vi.fn();
+      const ws = { readyState: 1, close, send } as unknown as WebSocket;
+      const session = createLiveness(
+        {
+          intervalMs,
+          timeoutMs,
+          ping: JSON.stringify({ type: "PING" }),
+          isPong: () => false,
+        },
+        () => close(),
+      );
+
+      session.start(ws);
+      vi.advanceTimersByTime(10_000);
+      expect(send).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+    },
+  );
+
+  it("intervalMs 0 does not flood pings", () => {
     const send = vi.fn();
-    const ws = { readyState: 1, close, send } as unknown as WebSocket;
+    const ws = {
+      readyState: 1,
+      close: vi.fn(),
+      send,
+    } as unknown as WebSocket;
     const session = createLiveness({
-      intervalMs: 1_000,
-      timeoutMs: Number.NaN,
-      ping: JSON.stringify({ type: "PING" }),
-      isPong: () => false,
-    });
-
-    session.start(ws);
-    vi.advanceTimersByTime(1);
-    expect(close).not.toHaveBeenCalled();
-    expect(send).toHaveBeenCalledTimes(1);
-
-    vi.advanceTimersByTime(10_000);
-    expect(close).not.toHaveBeenCalled();
-    expect(send).toHaveBeenCalledTimes(11);
-  });
-
-  it("non-finite intervalMs does not ping in a tight loop", () => {
-    const close = vi.fn();
-    const send = vi.fn();
-    const ws = { readyState: 1, close, send } as unknown as WebSocket;
-    const session = createLiveness({
-      intervalMs: Number.NaN,
+      intervalMs: 0,
       timeoutMs: 10_000,
-      ping: JSON.stringify({ type: "PING" }),
+      ping: "ping",
       isPong: () => false,
     });
 
     session.start(ws);
-    vi.advanceTimersByTime(1_000);
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(close).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(20);
+    expect(send).not.toHaveBeenCalled();
   });
 });

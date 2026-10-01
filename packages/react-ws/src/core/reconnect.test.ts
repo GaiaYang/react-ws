@@ -493,31 +493,33 @@ describe("reconnect", () => {
     expect(refs.exhausted).toBe(false);
   });
 
-  it("non-finite reconnectMinUptimeMs does not reset the cycle immediately", () => {
-    const { refs, apply } = createApply();
-    const reconnect = createReconnect(
-      {
-        reconnectMs: 100,
-        reconnectMax: 0,
-        reconnectMinUptimeMs: Number.NaN,
-      },
-      apply,
-    );
-    reconnect.bindOnReconnect(vi.fn());
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    "non-finite reconnectMinUptimeMs (%s) resets at 5s",
+    (reconnectMinUptimeMs) => {
+      const { refs, apply } = createApply();
+      const reconnect = createReconnect(
+        {
+          reconnectMs: 100,
+          reconnectMax: 0,
+          reconnectMinUptimeMs,
+        },
+        apply,
+      );
+      reconnect.bindOnReconnect(vi.fn());
 
-    reconnect.onConnectBegin();
-    expect(reconnect.scheduleAfterClose()).toBe(true);
-    vi.advanceTimersByTime(100);
-    reconnect.onConnectBegin();
-    reconnect.onOpen();
-    expect(refs.attempt).toBe(1);
+      reconnect.onConnectBegin();
+      expect(reconnect.scheduleAfterClose()).toBe(true);
+      vi.advanceTimersByTime(100);
+      reconnect.onConnectBegin();
+      reconnect.onOpen();
+      expect(refs.attempt).toBe(1);
 
-    vi.advanceTimersByTime(1);
-    expect(refs.attempt).toBe(1);
-    // 預設 5000 的歸零計時器若被排上，這裡 attempt 會變 0
-    vi.advanceTimersByTime(5000);
-    expect(refs.attempt).toBe(1);
-  });
+      vi.advanceTimersByTime(4999);
+      expect(refs.attempt).toBe(1);
+      vi.advanceTimersByTime(1);
+      expect(refs.attempt).toBe(0);
+    },
+  );
 });
 
 describe("reconnectDelay", () => {
