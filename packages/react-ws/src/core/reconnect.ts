@@ -43,9 +43,9 @@ export interface ReconnectOptions {
    *
    * `0` 代表不使用抖動，`1` 代表 full jitter。
    *
-   * 預設會將等待時間隨機縮短 0%～20%。
+   * 預設 `0.5` 是 equal jitter：等待落在計算值的 50%～100%。
    *
-   * @default 0.2
+   * @default 0.5
    */
   reconnectJitter?: number;
   /**
@@ -71,7 +71,7 @@ export function resolveReconnectOptions(
     reconnectMax = 0,
     reconnectBackoff = 2,
     reconnectDelayMaxMs = 30_000,
-    reconnectJitter = 0.2,
+    reconnectJitter = 0.5,
     reconnectMinUptimeMs = DEFAULT_RECONNECT_MIN_UPTIME_MS,
   } = options;
   return {

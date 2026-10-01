@@ -90,7 +90,7 @@ describe("createWsSession", () => {
 
   it("omitted reconnect fields back off, cap, jitter, then reset after 5s", () => {
     vi.useFakeTimers();
-    // random() 不含 1；mock 1 讓預設 jitter 0.2 把等待縮到 8 成
+    // random() 不含 1；mock 1 讓預設 jitter 0.5 把等待縮到一半
     vi.spyOn(Math, "random").mockReturnValue(1);
     const session = createWsSession({
       url: "ws://example.test",
@@ -111,12 +111,12 @@ describe("createWsSession", () => {
       waits.push(readWait());
     }
 
-    expect(waits[0]).toBe(80);
-    expect(waits[1]).toBe(160);
-    expect(waits[8]).toBe(20_480);
-    expect(waits[9]).toBe(24_000);
+    expect(waits[0]).toBe(50);
+    expect(waits[1]).toBe(100);
+    expect(waits[8]).toBe(12_800);
+    expect(waits[9]).toBe(15_000);
 
-    vi.advanceTimersByTime(24_000);
+    vi.advanceTimersByTime(15_000);
     latestSocket().open();
     expect(session.store.getState().reconnectAttempt).toBe(10);
     vi.advanceTimersByTime(4999);

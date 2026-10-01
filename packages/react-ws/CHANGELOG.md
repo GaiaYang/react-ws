@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Default `reconnectJitter` is `0.5` (equal jitter: each wait is 50%–100% of the capped backoff). It was `0.2` (80%–100%), which left clients clustered after a shared disconnect. `1` is still full jitter
+
 ### Fixed
 
 - Replacing a socket sets `status` to `closed` before the `"close"` handler, so `send` returns `false`. Previously `status` stayed `open`. During that handler a manual `connect()` keeps `phase` at `connecting`; an already-fired auto-reconnect keeps `reconnecting`. A `connect()` in that handler that fails to construct keeps the socket already built instead of dropping both and leaving `status` at `open`

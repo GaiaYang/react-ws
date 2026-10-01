@@ -328,7 +328,7 @@ These options take effect only when `reconnectMs > 0`.
 | `reconnectBackoff`     |     `2` | Multiplier for the next wait. `1` keeps a fixed interval.                                                            |
 | `reconnectMax`         |     `0` | Cap on auto-reconnects. `0` means no cap.                                                                            |
 | `reconnectDelayMaxMs`  | `30000` | Cap for one wait, including jitter. `0` means no cap.                                                                |
-| `reconnectJitter`      |   `0.2` | How much to randomly shorten the wait, in `[0, 1]`. `0` means no jitter.                                             |
+| `reconnectJitter`      |   `0.5` | How much to randomly shorten the wait, in `[0, 1]`. `0` means no jitter.                                             |
 | `reconnectMinUptimeMs` |  `5000` | How long the WebSocket must stay open before the reconnect cycle resets. `0` resets as soon as the connection opens. |
 
 ### Reconnect wait
@@ -361,7 +361,7 @@ With the defaults, the waits are about:
 1s → 2s → 4s → ...
 ```
 
-Each wait is at most 30 seconds, and is shortened by a random 0% to 20%.
+Each wait is at most 30 seconds, and is shortened by a random 0% to 50%.
 
 `0` means something different for each option:
 
@@ -570,7 +570,7 @@ To use different options, call `createWsContext` again and create another contex
 | `reconnectMax`         | `number`                                  | `0`                                     | Cap on auto-reconnects. `0` means no cap. Takes effect only when `reconnectMs > 0`.                                                                                      |
 | `reconnectBackoff`     | `number`                                  | `2`                                     | Multiplier for the next wait. `2` doubles it, `1` keeps a fixed interval, and values below `1` are clamped to `1`.                                                       |
 | `reconnectDelayMaxMs`  | `number`                                  | `30000`                                 | Cap in milliseconds for one wait, including jitter. `0` means no cap.                                                                                                    |
-| `reconnectJitter`      | `number`                                  | `0.2`                                   | How much to randomly shorten the wait, in `[0, 1]`. By default the actual wait is shortened by a random 0% to 20%. `1` is full jitter, and `0` means no jitter.          |
+| `reconnectJitter`      | `number`                                  | `0.5`                                   | How much to randomly shorten the wait, in `[0, 1]`. By default the actual wait is shortened by a random 0% to 50%. `1` is full jitter, and `0` means no jitter.          |
 | `reconnectMinUptimeMs` | `number`                                  | `5000`                                  | How long the WebSocket must stay open, in milliseconds, before the reconnect cycle resets. `0` resets immediately after `open`. A non-finite value uses this default.    |
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | see [Message parsing](#message-parsing) | Maps raw `MessageEvent.data` to application data. A throw fires `"error"`, does not fire `"message"`, and does not close the WebSocket.                                  |
 | `liveness`             | `LivenessOptions`                         | none                                    | Application-layer heartbeat. Disabled when omitted.                                                                                                                      |

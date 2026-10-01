@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   type Context,
 } from "react";
@@ -23,10 +24,10 @@ export function createUseWsEvents(EventsCtx: Context<WsEventsEmitter | null>) {
 
     const handlerRef = useRef(handler);
 
-    // handler 放 ref，避免每次變動都重訂閱而漏事件
-    useEffect(() => {
+    // 繪製前換上最新 handler。被動 effect 晚於繪製，中間的訊息會打到舊的。
+    useLayoutEffect(() => {
       handlerRef.current = handler;
-    });
+    }, [handler]);
 
     useEffect(() => {
       return emitter.on(type, ((...args: never[]) => {

@@ -305,7 +305,7 @@ describe("createWsContext", () => {
       expect(attempt()).toBe("1");
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(79);
+        await vi.advanceTimersByTimeAsync(49);
       });
       expect(MockWebSocket.instances).toHaveLength(1);
       await act(async () => {
@@ -323,7 +323,7 @@ describe("createWsContext", () => {
       expect(attempt()).toBe("2");
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(159);
+        await vi.advanceTimersByTimeAsync(99);
       });
       expect(MockWebSocket.instances).toHaveLength(2);
       await act(async () => {

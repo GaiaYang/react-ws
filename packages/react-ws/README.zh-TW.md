@@ -328,7 +328,7 @@ reconnecting
 | `reconnectBackoff`     |     `2` | 下一次等待時間的倍率。`1` 代表固定間隔。                                     |
 | `reconnectMax`         |     `0` | 自動重連次數上限。`0` 代表不限制。                                           |
 | `reconnectDelayMaxMs`  | `30000` | 單次等待時間的上限，包含抖動。`0` 代表不設上限。                             |
-| `reconnectJitter`      |   `0.2` | 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。`0` 代表不使用抖動。                |
+| `reconnectJitter`      |   `0.5` | 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。`0` 代表不使用抖動。                |
 | `reconnectMinUptimeMs` |  `5000` | WebSocket 必須維持開啟多久，才會將重連週期歸零。`0` 代表連線成功後立即歸零。 |
 
 ### 重連等待時間
@@ -361,7 +361,7 @@ reconnectMs: 1000;
 1 秒 → 2 秒 → 4 秒 → ...
 ```
 
-每次等待時間最高不超過 30 秒，並會隨機縮短 0%～20%。
+每次等待時間最高不超過 30 秒，並會隨機縮短 0%～50%。
 
 各設定值為 `0` 時的意義不同：
 
@@ -570,7 +570,7 @@ createWsContext({
 | `reconnectMax`         | `number`                                  | `0`                     | 自動重連次數上限。`0` 代表不限制。只有在 `reconnectMs > 0` 時才會生效。                                                   |
 | `reconnectBackoff`     | `number`                                  | `2`                     | 下一次等待時間的倍率。`2` 代表加倍，`1` 代表固定間隔，小於 `1` 的值會限制為 `1`。                                         |
 | `reconnectDelayMaxMs`  | `number`                                  | `30000`                 | 單次等待時間的上限（毫秒），包含抖動。`0` 代表不設上限。                                                                  |
-| `reconnectJitter`      | `number`                                  | `0.2`                   | 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。預設會將實際等待時間隨機縮短 0%～20%。`1` 代表 full jitter，`0` 代表不使用抖動。 |
+| `reconnectJitter`      | `number`                                  | `0.5`                   | 隨機縮短等待時間的幅度，範圍為 `[0, 1]`。預設會將實際等待時間隨機縮短 0%～50%。`1` 代表 full jitter，`0` 代表不使用抖動。 |
 | `reconnectMinUptimeMs` | `number`                                  | `5000`                  | WebSocket 需要維持開啟多久才會將重連週期歸零（毫秒）。`0` 代表 `open` 後立即歸零。非有限數沿用這個預設。                  |
 | `parse`                | `(data: MessageEvent["data"]) => unknown` | 見[訊息解析](#訊息解析) | 將原始 `MessageEvent.data` 轉換為應用程式資料。擲出例外時會觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。   |
 | `liveness`             | `LivenessOptions`                         | 無                      | 應用層心跳機制。未設定時不會啟用。                                                                                        |
