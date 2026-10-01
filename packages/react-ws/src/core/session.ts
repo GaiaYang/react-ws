@@ -7,7 +7,12 @@ import {
   resolveReconnectOptions,
   type ReconnectOptions,
 } from "./reconnect";
-import { clientCloseEvent, detachAndClose, stringifyJson } from "./socket";
+import {
+  MAX_TIMEOUT_MS,
+  clientCloseEvent,
+  detachAndClose,
+  stringifyJson,
+} from "./socket";
 import { createWsStore, type WsState, type WsStoreApi } from "./ws-state";
 
 /** 連線設定 */
@@ -50,6 +55,16 @@ export interface WsSessionOptions extends ReconnectOptions {
    * @default undefined
    */
   liveness?: LivenessOptions;
+  /**
+   * 握手停在 `CONNECTING` 超過這個時間（毫秒）就關閉
+   *
+   * reason 為 `"connect timeout"`，之後與其他非主動斷線走同一條關閉路徑。
+   *
+   * `0`、非有限數、負數都代表關閉，與 `reconnectMs` 的 `0` 相同。
+   *
+   * @default 0
+   */
+  connectTimeoutMs?: number;
 }
 
 /** 事件名稱與回呼的對應型別 */
@@ -66,11 +81,23 @@ export interface WsEvents {
   /**
    * WebSocket、握手、設定值取得或 `parse` 發生錯誤
    *
-   * 握手失敗、`url`／`protocols` 取值失敗，或 `parse` 擲出時，參數是 `{ type: "error" }`，不是 `Error`。
+   * 空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗，或 `parse` 擲出時，參數是
+   * `{ type: "error", source: "construct" | "parse", message: string, cause: unknown }`，不是 `Error`。
+   *
+   * 空 URL 的 `message` 為 `"empty url"`。`source` 為 `"construct"` 或 `"parse"`。
    *
    * 原生 WebSocket 的 `"error"` 則傳入原本的事件。
    */
-  error: (event: Event) => void;
+  error: (
+    event:
+      | Event
+      | {
+          type: "error";
+          source: "construct" | "parse";
+          message: string;
+          cause: unknown;
+        },
+  ) => void;
   /**
    * WebSocket 連線關閉
    *
@@ -108,9 +135,11 @@ export interface WsActions {
    *
    * URL 為空、getter 擲出，或 `new WebSocket()` 失敗時，觸發 `"error"`，並保留既有連線。
    *
-   * 若這次呼叫來自已觸發的自動重連計時器，會停止自動重連，狀態變成 `status: "closed"`、`phase: "stopped"`。
+   * 若這次呼叫來自已觸發的自動重連計時器，這次嘗試算失敗，並沿用自動重連的排程。
    *
-   * 已達 `reconnectMax` 時 `reconnectExhausted` 為 `true`。
+   * 未達 `reconnectMax` 時 `phase` 維持 `reconnecting`。`reconnectMax` 為 `0` 時會一直排。
+   *
+   * 已達 `reconnectMax` 時狀態變成 `status: "closed"`、`phase: "stopped"`，且 `reconnectExhausted` 為 `true`。
    *
    * 若仍在等待自動重連計時器，會取消目前的等待，並以同一個 `reconnectAttempt` 重新排程。
    *
@@ -143,17 +172,38 @@ function defaultParse(data: MessageEvent["data"]): unknown {
   }
 }
 
-/** handler 擲出不可打斷改用新 socket／liveness */
-function emitSafe<E extends keyof WsEvents>(
-  emitter: WsEventsEmitter,
-  event: E,
-  ...args: Parameters<WsEvents[E]>
-): void {
-  try {
-    emitter.emit(event, ...args);
-  } catch {
-    void 0;
+/** 非有限數、負數、`0` 都關閉。超過平台上限會溢位成立刻觸發，夾回上限 */
+function resolveConnectTimeoutMs(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return 0;
   }
+  return Math.min(value, MAX_TIMEOUT_MS);
+}
+
+function internalError(
+  source: "construct" | "parse",
+  cause: unknown,
+): {
+  type: "error";
+  source: "construct" | "parse";
+  message: string;
+  cause: unknown;
+} {
+  return {
+    type: "error",
+    source,
+    message: cause instanceof Error ? cause.message : "unknown",
+    cause,
+  };
+}
+
+function connectTimeoutEvent(): CloseEvent {
+  return {
+    type: "close",
+    code: 1006,
+    reason: "connect timeout",
+    wasClean: false,
+  } as CloseEvent;
 }
 
 /**
@@ -167,7 +217,9 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     protocols,
     parse = defaultParse,
     liveness: livenessOptions,
+    connectTimeoutMs: connectTimeoutOption,
   } = options;
+  const connectTimeoutMs = resolveConnectTimeoutMs(connectTimeoutOption);
 
   const store = createWsStore();
   const emitter = createEmitter<WsEvents>();
@@ -190,9 +242,27 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   let wsCurrent: WebSocket | null = null;
   let connectGeneration = 0;
+  let connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearConnectTimer(): void {
+    if (connectTimer != null) {
+      clearTimeout(connectTimer);
+      connectTimer = null;
+    }
+  }
+
+  function armConnectTimer(ws: WebSocket): void {
+    clearConnectTimer();
+    if (connectTimeoutMs <= 0 || ws.readyState !== WebSocket.CONNECTING) return;
+    connectTimer = setTimeout(() => {
+      connectTimer = null;
+      settleClose(ws, connectTimeoutEvent());
+    }, connectTimeoutMs);
+  }
 
   function teardown(reason: string): void {
     connectGeneration += 1;
+    clearConnectTimer();
     reconnect.cancel();
     liveness.stop();
     store.setState({ phase: "idle", status: "closed" });
@@ -200,7 +270,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     wsCurrent = null;
     if (ws) {
       detachAndClose(ws);
-      emitSafe(emitter, "close", clientCloseEvent(reason));
+      emitter.emit("close", clientCloseEvent(reason));
     }
   }
 
@@ -231,10 +301,10 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         resolvedProtocols == null
           ? new WebSocket(resolvedUrl)
           : new WebSocket(resolvedUrl, resolvedProtocols);
-    } catch {
+    } catch (cause) {
       // getter 裡的 disconnect／connect 已經收斂，外層不可再改 store
       if (generation !== connectGeneration) return;
-      // 先 store 再 emit，避免 handler 擲出／disconnect 卡住停重試
+      // 先 store 再 emit，避免 handler 擲出／disconnect 讓這次排程沒寫進去
       const outcome = reconnect.onConstructFailure();
       switch (outcome) {
         case "stopped":
@@ -246,7 +316,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         default:
           break;
       }
-      emitSafe(emitter, "error", { type: "error" } as Event);
+      emitter.emit("error", internalError("construct", cause));
       return;
     }
 
@@ -260,10 +330,11 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
     const prev = wsCurrent;
     if (prev) {
+      clearConnectTimer();
       wsCurrent = null;
       detachAndClose(prev);
       // close 仍屬舊線；若先 set connecting，handler 會當成新握手的 close
-      emitSafe(emitter, "close", clientCloseEvent("reconnect"));
+      emitter.emit("close", clientCloseEvent("reconnect"));
     }
 
     // close handler 可能已 disconnect／再次 connect，這一輪 socket 不能再掛
@@ -277,15 +348,17 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       phase: fromReconnect ? "reconnecting" : "connecting",
     });
     wsCurrent = ws;
+    armConnectTimer(ws);
 
     ws.onopen = (event) => {
       if (wsCurrent !== ws) return;
+      clearConnectTimer();
       reconnect.onOpen();
       store.setState({ status: "open", phase: "open" });
-      liveness.start(ws);
-      // ping 可能同步 disconnect／connect，這次握手已不是現役
+      // 已經 open 的這顆先通知，第一個 ping 不得早於訂閱者
+      emitter.emit("open", event);
       if (wsCurrent !== ws) return;
-      emitSafe(emitter, "open", event);
+      liveness.start(ws);
     };
 
     ws.onmessage = (event) => {
@@ -293,17 +366,17 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       let data: unknown;
       try {
         data = parse(event.data);
-      } catch {
-        emitSafe(emitter, "error", { type: "error" } as Event);
+      } catch (cause) {
+        emitter.emit("error", internalError("parse", cause));
         return;
       }
       liveness.onMessage(data);
-      emitSafe(emitter, "message", data, event);
+      emitter.emit("message", data, event);
     };
 
     ws.onerror = (event) => {
       if (wsCurrent !== ws) return;
-      emitSafe(emitter, "error", event);
+      emitter.emit("error", event);
     };
 
     ws.onclose = (event) => {
@@ -313,6 +386,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   function settleClose(ws: WebSocket, event: CloseEvent): void {
     if (wsCurrent !== ws) return;
+    clearConnectTimer();
     wsCurrent = null;
     liveness.stop();
     detachAndClose(ws);
@@ -326,7 +400,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
           ? "idle"
           : "stopped",
     }));
-    emitSafe(emitter, "close", event);
+    emitter.emit("close", event);
   }
 
   reconnect.bindOnReconnect(connect);

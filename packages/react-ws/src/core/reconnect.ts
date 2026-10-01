@@ -164,7 +164,7 @@ export interface Reconnect {
   clearTimerTrigger: () => boolean;
   /**
    * 建構失敗時。
-   * - 計時器已觸發 → 停自動重試；已達 `reconnectMax` 時 `reconnectExhausted` 為 `true`
+   * - 計時器已觸發 → 這次嘗試算失敗，接著 `schedule()`。未達上限則再排；達到上限則停，且 `reconnectExhausted` 為 `true`
    * - 仍在等待 → 取消倒數，以同一個 `attempt` 再排（手動失敗不計次）
    * - 否則不動
    */
@@ -208,7 +208,7 @@ export function createReconnect(
     if (!fromTimer || timer != null) return false;
     fromTimer = false;
     const reconnectMax = options.reconnectMax;
-    // 時間點已過，清掉以免 UI 還在倒數。這次已是上限內最後一次時，建構失敗也算用盡
+    // 時間點已過，清掉倒數。這次已達上限時不再重試
     apply(
       typeof reconnectMax === "number" &&
         reconnectMax > 0 &&
@@ -237,7 +237,8 @@ export function createReconnect(
       reconnectMax > 0 &&
       attempt >= reconnectMax
     ) {
-      apply({ reconnectExhausted: true });
+      // 關閉路徑的倒數在連線開始時已歸零。建構失敗達上限時，這次一併清掉已到期的時間戳
+      apply({ reconnectExhausted: true, nextReconnectAt: 0 });
       return false;
     }
     attempt += 1;
@@ -298,7 +299,11 @@ export function createReconnect(
     scheduleAfterClose: schedule,
     clearTimerTrigger,
     onConstructFailure() {
-      if (clearTimerTrigger()) return "stopped";
+      // 次數在排這次等待時已經加過。先清已觸發旗標，再讓 schedule 決定下一次；不要先把倒數寫成 0
+      if (fromTimer && timer == null) {
+        fromTimer = false;
+        return schedule() ? "reconnecting" : "stopped";
+      }
       if (fromTimer && timer != null) {
         clearTimer();
         armTimer();

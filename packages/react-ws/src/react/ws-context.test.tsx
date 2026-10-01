@@ -1,7 +1,10 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WsEvents } from "../core/session";
 import { createWsContext } from "./create-ws-context";
+
+type WsErrorEvent = Parameters<WsEvents["error"]>[0];
 
 type WsListener = ((ev: Event) => void) | null;
 
@@ -576,7 +579,7 @@ describe("createWsContext", () => {
   });
 
   it("getter throw before connect emits error and stays idle", async () => {
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
 
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => {
@@ -608,11 +611,16 @@ describe("createWsContext", () => {
       container.querySelector("[data-phase]")?.getAttribute("data-phase"),
     ).toBe("idle");
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.type).toBe("error");
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "construct",
+      message: "no token",
+      cause: expect.any(Error),
+    });
   });
 
   it("empty url is the same as getter throw", async () => {
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => "",
       autoConnect: true,
@@ -641,7 +649,12 @@ describe("createWsContext", () => {
       container.querySelector("[data-phase]")?.getAttribute("data-phase"),
     ).toBe("idle");
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.type).toBe("error");
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "construct",
+      message: "empty url",
+      cause: expect.any(Error),
+    });
   });
 
   it("disconnect inside url getter is not overwritten by connect", async () => {
@@ -847,7 +860,7 @@ describe("createWsContext", () => {
     expect(latestWs().protocols).toBe("chat");
   });
 
-  it("getter throw on reconnect stops without retrying", async () => {
+  it("getter throw on reconnect schedules another attempt", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
 
@@ -858,11 +871,18 @@ describe("createWsContext", () => {
       },
       autoConnect: true,
       reconnectMs: 100,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
     });
 
     function Probe() {
       const phase = useWsState((s) => s.phase);
-      return createElement("div", { "data-phase": phase }, phase);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
+      return createElement("div", {
+        "data-phase": phase,
+        "data-next": nextReconnectAt,
+      });
     }
 
     const { container } = render(
@@ -870,6 +890,8 @@ describe("createWsContext", () => {
     );
     const phase = () =>
       container.querySelector("[data-phase]")?.getAttribute("data-phase");
+    const nextAt = () =>
+      Number(container.querySelector("[data-next]")?.getAttribute("data-next"));
 
     await act(async () => {
       latestWs().open();
@@ -885,16 +907,18 @@ describe("createWsContext", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(phase()).toBe("stopped");
+    expect(phase()).toBe("reconnecting");
+    expect(nextAt()).toBeGreaterThan(Date.now());
 
+    shouldThrow = false;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(MockWebSocket.instances).toHaveLength(1);
-    expect(phase()).toBe("stopped");
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(phase()).toBe("reconnecting");
   });
 
-  it("invalid url on reconnect stops without retrying", async () => {
+  it("invalid url on reconnect schedules another attempt", async () => {
     vi.useFakeTimers();
     let nextUrl = "ws://test";
 
@@ -902,11 +926,18 @@ describe("createWsContext", () => {
       url: () => nextUrl,
       autoConnect: true,
       reconnectMs: 100,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
     });
 
     function Probe() {
       const phase = useWsState((s) => s.phase);
-      return createElement("div", { "data-phase": phase }, phase);
+      const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
+      return createElement("div", {
+        "data-phase": phase,
+        "data-next": nextReconnectAt,
+      });
     }
 
     const { container } = render(
@@ -914,6 +945,8 @@ describe("createWsContext", () => {
     );
     const phase = () =>
       container.querySelector("[data-phase]")?.getAttribute("data-phase");
+    const nextAt = () =>
+      Number(container.querySelector("[data-next]")?.getAttribute("data-next"));
 
     await act(async () => {
       latestWs().open();
@@ -926,19 +959,21 @@ describe("createWsContext", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(phase()).toBe("stopped");
+    expect(phase()).toBe("reconnecting");
+    expect(nextAt()).toBeGreaterThan(Date.now());
 
+    nextUrl = "ws://test";
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(MockWebSocket.instances).toHaveLength(1);
-    expect(phase()).toBe("stopped");
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(phase()).toBe("reconnecting");
   });
 
   it("connect is a no-op without WebSocket", async () => {
     vi.stubGlobal("WebSocket", undefined);
 
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
@@ -973,7 +1008,7 @@ describe("createWsContext", () => {
   });
 
   it("synthetic close and error work without Event/CloseEvent constructors", async () => {
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const closes: CloseEvent[] = [];
     let shouldThrow = false;
 
@@ -1012,7 +1047,12 @@ describe("createWsContext", () => {
       api.connect();
     });
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.type).toBe("error");
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "construct",
+      message: "no token",
+      cause: expect.any(Error),
+    });
     expect(first.readyState).toBe(MockWebSocket.OPEN);
 
     await act(async () => {
@@ -1060,7 +1100,7 @@ describe("createWsContext", () => {
   it("parse throw emits error, skips message, and keeps the socket", async () => {
     vi.useFakeTimers();
     const messages: unknown[] = [];
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
@@ -1101,7 +1141,12 @@ describe("createWsContext", () => {
     });
     expect(messages).toEqual([]);
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.type).toBe("error");
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "parse",
+      message: "parse",
+      cause: expect.any(Error),
+    });
     expect(status()).toBe("open");
     expect(latestWs().readyState).toBe(MockWebSocket.OPEN);
 
@@ -1115,7 +1160,7 @@ describe("createWsContext", () => {
   it("isPong throw still emits message and does not clear timeout", async () => {
     vi.useFakeTimers();
     const messages: unknown[] = [];
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
@@ -1164,7 +1209,7 @@ describe("createWsContext", () => {
     expect(status()).toBe("closed");
   });
 
-  it("ping that disconnects does not emit open after close", async () => {
+  it("ping that disconnects emits open then client disconnect", async () => {
     const events: string[] = [];
     let api!: ReturnType<ReturnType<typeof createWsContext>["useWsActions"]>;
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
@@ -1188,6 +1233,7 @@ describe("createWsContext", () => {
       const phase = useWsState((s) => s.phase);
       useWsEvents("open", () => {
         events.push("open");
+        api.send("from-open");
       });
       useWsEvents("close", (event) => {
         events.push(event.reason || "close");
@@ -1209,14 +1255,14 @@ describe("createWsContext", () => {
     await act(async () => {
       latestWs().open();
     });
-    expect(events).toEqual(["client disconnect"]);
+    expect(events).toEqual(["open", "client disconnect"]);
     expect(status()).toBe("closed");
     expect(phase()).toBe("idle");
     expect(latestWs().readyState).toBe(MockWebSocket.CLOSED);
-    expect(latestWs().sent).toEqual([]);
+    expect(latestWs().sent).toEqual(["from-open"]);
   });
 
-  it("ping that connects does not emit open for the replaced socket", async () => {
+  it("ping that connects emits open for the opened socket then reconnect", async () => {
     const events: string[] = [];
     let api!: ReturnType<ReturnType<typeof createWsContext>["useWsActions"]>;
     let switched = false;
@@ -1266,12 +1312,14 @@ describe("createWsContext", () => {
     await act(async () => {
       first.open();
     });
-    expect(events).toEqual(["reconnect"]);
+    expect(events).toEqual(["open", "reconnect"]);
     expect(status()).toBe("connecting");
     expect(phase()).toBe("connecting");
     expect(MockWebSocket.instances).toHaveLength(2);
     expect(first.readyState).toBe(MockWebSocket.CLOSED);
+    expect(first.sent).toEqual([]);
     expect(latestWs().readyState).toBe(MockWebSocket.CONNECTING);
+    expect(latestWs().sent).toEqual([]);
   });
 
   it("open still fires when liveness ping throws", async () => {
@@ -1749,7 +1797,7 @@ describe("createWsContext", () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
   });
 
-  it("getter throw after fired reconnect does not schedule another timer", async () => {
+  it("getter throw after fired reconnect schedules another timer", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
     const { WsProvider, useWsState } = createWsContext({
@@ -1793,16 +1841,16 @@ describe("createWsContext", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(phase()).toBe("stopped");
-    expect(nextAt()).toBe(0);
+    expect(phase()).toBe("reconnecting");
+    expect(nextAt()).toBeGreaterThan(Date.now());
     expect(MockWebSocket.instances).toHaveLength(1);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(100);
     });
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(phase()).toBe("stopped");
-    expect(nextAt()).toBe(0);
+    expect(phase()).toBe("reconnecting");
+    expect(nextAt()).toBeGreaterThan(Date.now());
   });
 
   it("disconnect while waiting then connect is connecting", async () => {
@@ -1911,7 +1959,7 @@ describe("createWsContext", () => {
   it("getter throw while waiting reschedules the same attempt", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: () => {
@@ -1966,6 +2014,12 @@ describe("createWsContext", () => {
       api.connect();
     });
     expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "construct",
+      message: "no token",
+      cause: expect.any(Error),
+    });
     expect(phase()).toBe("reconnecting");
     expect(attempt()).toBe("1");
     expect(nextAt()).toBeGreaterThan(Date.now());
@@ -2107,7 +2161,7 @@ describe("createWsContext", () => {
     expect(phase()).toBe("idle");
   });
 
-  it("handshake error handler throw still stops auto-retry", async () => {
+  it("handshake error handler throw still reschedules", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
@@ -2150,26 +2204,24 @@ describe("createWsContext", () => {
     });
     expect(phase()).toBe("reconnecting");
 
+    vi.spyOn(console, "error").mockImplementation(() => {});
     shouldThrow = true;
     await act(async () => {
-      try {
-        await vi.advanceTimersByTimeAsync(100);
-      } catch {
-        // error handler 擲出不該擋住連線層停重試
-      }
+      await vi.advanceTimersByTimeAsync(100);
     });
     expect(status()).toBe("closed");
-    expect(phase()).toBe("stopped");
-    expect(phase()).not.toBe("reconnecting");
+    expect(phase()).toBe("reconnecting");
 
+    shouldThrow = false;
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(100);
     });
-    expect(MockWebSocket.instances).toHaveLength(1);
-    expect(phase()).toBe("stopped");
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(phase()).toBe("reconnecting");
   });
 
   it("close handler throw still takes over the new socket", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
@@ -2329,5 +2381,361 @@ describe("createWsContext", () => {
     });
     expect(status()).toBe("open");
     expect(phase()).toBe("open");
+  });
+
+  it("a throwing handler still runs later subscribers", async () => {
+    const seen: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { WsProvider, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      liveness: {
+        intervalMs: 3_000,
+        timeoutMs: 10_000,
+        ping: "ping",
+        isPong: () => false,
+      },
+    });
+
+    function First() {
+      useWsEvents("open", () => {
+        throw new Error("handler");
+      });
+      return null;
+    }
+
+    function Second() {
+      useWsEvents("open", () => {
+        seen.push("second");
+      });
+      return null;
+    }
+
+    render(
+      createElement(
+        WsProvider,
+        null,
+        createElement(First),
+        createElement(Second),
+      ),
+    );
+    await act(async () => {
+      latestWs().open();
+    });
+    expect(seen).toEqual(["second"]);
+    expect(errorSpy).toHaveBeenCalledWith(expect.any(Error));
+    expect(latestWs().sent).toEqual(["ping"]);
+  });
+
+  it("native error event is passed through", async () => {
+    const errors: WsErrorEvent[] = [];
+    const { WsProvider, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+    });
+
+    function Probe() {
+      useWsEvents("error", (event) => {
+        errors.push(event);
+      });
+      return null;
+    }
+
+    render(createElement(WsProvider, null, createElement(Probe)));
+    const event = new Event("error");
+    await act(async () => {
+      latestWs().onerror?.(event);
+    });
+    expect(errors).toEqual([event]);
+  });
+
+  it("non-error construct failure uses unknown message", async () => {
+    const cause = Symbol("no token");
+    const errors: WsErrorEvent[] = [];
+    const { WsProvider, useWsEvents } = createWsContext({
+      url: () => {
+        throw cause;
+      },
+      autoConnect: true,
+    });
+
+    function Probe() {
+      useWsEvents("error", (event) => {
+        errors.push(event);
+      });
+      return null;
+    }
+
+    render(createElement(WsProvider, null, createElement(Probe)));
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "construct",
+      message: "unknown",
+      cause,
+    });
+  });
+
+  it("connectTimeoutMs 0 leaves a stuck handshake connecting", async () => {
+    vi.useFakeTimers();
+    const { WsProvider, useWsState } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      connectTimeoutMs: 0,
+    });
+
+    function Probe() {
+      const phase = useWsState((s) => s.phase);
+      return createElement("div", { "data-phase": phase });
+    }
+
+    const { container } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(latestWs().readyState).toBe(MockWebSocket.CONNECTING);
+    expect(phase()).toBe("connecting");
+  });
+
+  it("non-finite or negative connectTimeoutMs does not close", async () => {
+    vi.useFakeTimers();
+    for (const connectTimeoutMs of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      cleanup();
+      MockWebSocket.instances = [];
+      const { WsProvider } = createWsContext({
+        url: "ws://test",
+        autoConnect: true,
+        connectTimeoutMs,
+      });
+      render(createElement(WsProvider, null, createElement("div")));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(latestWs().readyState).toBe(MockWebSocket.CONNECTING);
+    }
+  });
+
+  it("connect timeout closes and stops when reconnect is off", async () => {
+    vi.useFakeTimers();
+    const closes: CloseEvent[] = [];
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 0,
+      connectTimeoutMs: 1_000,
+    });
+
+    function Probe() {
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      useWsEvents("close", (event) => {
+        closes.push(event);
+      });
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
+    }
+
+    const { container } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(latestWs().readyState).toBe(MockWebSocket.CONNECTING);
+    expect(phase()).toBe("connecting");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(latestWs().readyState).toBe(MockWebSocket.CLOSED);
+    expect(closes).toHaveLength(1);
+    expect(closes[0]).toMatchObject({
+      type: "close",
+      code: 1006,
+      reason: "connect timeout",
+      wasClean: false,
+    });
+    expect(status()).toBe("closed");
+    expect(phase()).toBe("stopped");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(phase()).toBe("stopped");
+  });
+
+  it("connect timeout schedules reconnect", async () => {
+    vi.useFakeTimers();
+    const closes: string[] = [];
+    const { WsProvider, useWsState, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 100,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
+      connectTimeoutMs: 1_000,
+    });
+
+    function Probe() {
+      const phase = useWsState((s) => s.phase);
+      useWsEvents("close", (event) => {
+        closes.push(event.reason);
+      });
+      return createElement("div", { "data-phase": phase });
+    }
+
+    const { container } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(closes).toEqual(["connect timeout"]);
+    expect(phase()).toBe("reconnecting");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(phase()).toBe("reconnecting");
+  });
+
+  it("open before connect timeout does not close", async () => {
+    vi.useFakeTimers();
+    const { WsProvider, useWsState } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 0,
+      connectTimeoutMs: 1_000,
+    });
+
+    function Probe() {
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
+    }
+
+    const { container } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    await act(async () => {
+      latestWs().open();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(status()).toBe("open");
+    expect(phase()).toBe("open");
+    expect(latestWs().readyState).toBe(MockWebSocket.OPEN);
+  });
+
+  it("disconnect before connect timeout does not fire", async () => {
+    vi.useFakeTimers();
+    const closes: string[] = [];
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
+      createWsContext({
+        url: "ws://test",
+        autoConnect: true,
+        connectTimeoutMs: 1_000,
+      });
+
+    let api!: ReturnType<typeof useWsActions>;
+    function Probe() {
+      api = useWsActions();
+      const phase = useWsState((s) => s.phase);
+      useWsEvents("close", (event) => {
+        closes.push(event.reason);
+      });
+      return createElement("div", { "data-phase": phase });
+    }
+
+    const { container } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {
+      api.disconnect();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(phase()).toBe("idle");
+    expect(closes).toEqual(["client disconnect"]);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("replacing a connecting socket clears the previous timeout", async () => {
+    vi.useFakeTimers();
+    const closes: string[] = [];
+    const { WsProvider, useWsActions, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 0,
+      connectTimeoutMs: 1_000,
+    });
+
+    let api!: ReturnType<typeof useWsActions>;
+    function Probe() {
+      api = useWsActions();
+      useWsEvents("close", (event) => {
+        closes.push(event.reason);
+      });
+      return null;
+    }
+
+    render(createElement(WsProvider, null, createElement(Probe)));
+    const first = latestWs();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    await act(async () => {
+      api.connect();
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(first.readyState).toBe(MockWebSocket.CLOSED);
+    expect(closes).toEqual(["reconnect"]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    expect(latestWs().readyState).toBe(MockWebSocket.CONNECTING);
+    expect(closes).toEqual(["reconnect"]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(latestWs().readyState).toBe(MockWebSocket.CLOSED);
+    expect(closes).toEqual(["reconnect", "connect timeout"]);
   });
 });

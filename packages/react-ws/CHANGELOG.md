@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A fired reconnect that fails before `new WebSocket` (empty URL, getter throw, or constructor throw) counts as a failed attempt and goes through `schedule()`. Below `reconnectMax` it waits again with the same backoff and stays `reconnecting`. It becomes `stopped` with `reconnectExhausted: true` only at the cap. `reconnectMax: 0` keeps scheduling. Construct failure still does not open or replace the current socket. A missing `globalThis.WebSocket` still stops immediately. The store is still written before `"error"`, so a throwing handler cannot skip the reschedule. 0.6.4 wrote `stopped` before `"error"` so a throwing handler could not leave auto-retry stuck, and 0.8.1 kept that stop below the cap with `reconnectExhausted: false`, setting the flag only when the attempt had already reached `reconnectMax`. That early stop ended the cycle with no exhausted signal, so a caller could not tell it from a used-up retry. The attempt was already incremented when that wait was scheduled, so counting this failure as that attempt and scheduling again stays on the same backoff and does not tight-loop. Writing the store before `"error"` keeps the 0.6.4 guarantee. Missing `globalThis.WebSocket` still stops immediately, as in 0.6.4, because the next wait would have no constructor
+- Internal `"error"` values for construct and parse failure stay plain objects, so they still work without `Event` or `CloseEvent` constructors, and now include `source`, `message`, and `cause`. The caught exception was discarded, so those failures were indistinguishable. Native socket `"error"` is still the original `Event`. The handler argument is that plain object or `Event`
+- Each event subscriber is isolated. A throw is reported with `console.error`, and later subscribers still run. Replacing a socket and starting liveness still continue after a subscriber throw. 0.6.4 caught the whole emit so a throw would not stop socket replacement or liveness, and 0.7.1 documented that later handlers in that same notification may not run. That catch also swallowed the exception. Per-subscriber isolation keeps the 0.6.4 connection-layer rule and no longer drops the remaining subscribers
+- `"open"` is emitted before liveness starts, once that socket is current and open, so the first ping cannot run before `"open"` subscribers. A handshake that is no longer current when `onopen` runs still does not emit `"open"`, and the replacement socket does not emit `"open"` before its own open. 0.7.1 started liveness before `"open"` and skipped `"open"` when the first ping synchronously called `disconnect()` or `connect()`, so a socket that had already opened never notified subscribers and they could not send before that ping. Emitting `"open"` first keeps the stale-handshake rule and records the open that already happened. If that ping then disconnects, the order is `"open"` then close (reason `"client disconnect"`) and the ping is not sent
+
+### Added
+
+- `connectTimeoutMs` closes a handshake that stays `CONNECTING`. The default `0` leaves that behavior off, same as `reconnectMs: 0`. Non-finite and negative values are off. A timeout closes through the existing close path with reason `"connect timeout"`. When `reconnectMs` is `0`, the socket still closes and `phase` follows the existing rule: no schedule means `stopped`
+
 ## [0.8.1] - 2026-09-30
 
 ### Fixed

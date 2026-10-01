@@ -2,7 +2,10 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WsEvents } from "../core/session";
 import { createWsContext } from "./create-ws-context";
+
+type WsErrorEvent = Parameters<WsEvents["error"]>[0];
 import { clientCloseEvent } from "../core/socket";
 
 class MockWebSocket {
@@ -70,7 +73,7 @@ describe("environment: WebSocket-only runtime", () => {
   });
 
   it("synthetic error and close work without Event/CloseEvent constructors", async () => {
-    const errors: Event[] = [];
+    const errors: WsErrorEvent[] = [];
     const closes: CloseEvent[] = [];
     let shouldThrow = false;
 
@@ -107,7 +110,12 @@ describe("environment: WebSocket-only runtime", () => {
       api.connect();
     });
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.type).toBe("error");
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      source: "construct",
+      message: "no token",
+      cause: expect.any(Error),
+    });
 
     await act(async () => {
       api.disconnect();

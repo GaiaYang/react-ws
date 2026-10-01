@@ -23,7 +23,12 @@ export function createEmitter<
     emit(event, ...args) {
       const callbacks = this.events[event] || [];
       for (let i = 0, len = callbacks.length; i < len; i++) {
-        callbacks[i]!(...args);
+        try {
+          callbacks[i]!(...args);
+        } catch (error) {
+          // 單一訂閱者失敗不可跳過後面的人，也不可把例外吞成沒有痕跡
+          console.error(error);
+        }
       }
     },
     on(event, cb) {

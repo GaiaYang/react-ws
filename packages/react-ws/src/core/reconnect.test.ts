@@ -298,12 +298,17 @@ describe("reconnect", () => {
     expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
-  it("construct failure after the timer fired is stopped", () => {
+  it("construct failure after the timer fired schedules again", () => {
     const { refs, apply } = createApply();
     const onReconnect = vi.fn();
 
     const reconnect = createReconnect(
-      { reconnectMs: 100, reconnectMax: 0 },
+      {
+        reconnectMs: 100,
+        reconnectMax: 0,
+        reconnectBackoff: 1,
+        reconnectJitter: 0,
+      },
       apply,
     );
     reconnect.bindOnReconnect(onReconnect);
@@ -313,9 +318,15 @@ describe("reconnect", () => {
     vi.advanceTimersByTime(100);
     expect(onReconnect).toHaveBeenCalledTimes(1);
 
-    expect(reconnect.onConstructFailure()).toBe("stopped");
-    expect(refs.nextAt).toBe(0);
+    expect(reconnect.onConstructFailure()).toBe("reconnecting");
+    expect(refs.attempt).toBe(2);
     expect(refs.exhausted).toBe(false);
+    expect(refs.nextAt).toBeGreaterThan(Date.now());
+
+    vi.advanceTimersByTime(99);
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(onReconnect).toHaveBeenCalledTimes(2);
   });
 
   it("fired construct failure at reconnectMax sets exhausted", () => {
@@ -345,10 +356,15 @@ describe("reconnect", () => {
     expect(refs.exhausted).toBe(false);
   });
 
-  it("fired construct failure below reconnectMax stops without exhausted", () => {
+  it("fired construct failure below reconnectMax schedules again", () => {
     const { refs, apply } = createApply();
     const reconnect = createReconnect(
-      { reconnectMs: 100, reconnectMax: 2 },
+      {
+        reconnectMs: 100,
+        reconnectMax: 2,
+        reconnectBackoff: 1,
+        reconnectJitter: 0,
+      },
       apply,
     );
     reconnect.bindOnReconnect(vi.fn());
@@ -357,10 +373,10 @@ describe("reconnect", () => {
     expect(reconnect.scheduleAfterClose()).toBe(true);
     vi.advanceTimersByTime(100);
 
-    expect(reconnect.onConstructFailure()).toBe("stopped");
-    expect(refs.attempt).toBe(1);
+    expect(reconnect.onConstructFailure()).toBe("reconnecting");
+    expect(refs.attempt).toBe(2);
     expect(refs.exhausted).toBe(false);
-    expect(refs.nextAt).toBe(0);
+    expect(refs.nextAt).toBeGreaterThan(Date.now());
   });
 
   it("construct failure outside a reconnect cycle is a no-op", () => {
