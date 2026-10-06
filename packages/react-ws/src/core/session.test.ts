@@ -729,6 +729,48 @@ describe("createWsSession", () => {
     expect(session.getState().nextReconnectAt).toBeGreaterThan(Date.now());
   });
 
+  it("construct failure during a manual handshake keeps the reused attempt", () => {
+    vi.useFakeTimers();
+    let fail = false;
+    const session = createWsSession({
+      url: () => {
+        if (fail) throw new Error("no token");
+        return "ws://example.test";
+      },
+      reconnectMs: 100,
+      reconnectMax: 1,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 5_000,
+    });
+
+    session.connect();
+    latestSocket().open();
+    latestSocket().close();
+    session.connect();
+    const handshake = latestSocket();
+
+    fail = true;
+    session.connect();
+
+    expect(session.getState()).toMatchObject({
+      phase: "connecting",
+      reconnectAttempt: 1,
+      reconnectExhausted: false,
+    });
+    expect(handshake.readyState).toBe(MockWebSocket.CONNECTING);
+
+    handshake.close();
+
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "reconnecting",
+      reconnectAttempt: 1,
+      reconnectExhausted: false,
+    });
+    expect(session.getState().nextReconnectAt).toBeGreaterThan(Date.now());
+  });
+
   it("invalid liveness does not ping and reports the failure after open", () => {
     vi.useFakeTimers();
     const session = createWsSession({

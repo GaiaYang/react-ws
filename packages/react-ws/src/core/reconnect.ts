@@ -161,7 +161,7 @@ export interface Reconnect {
   /**
    * 沒有進行中的自動重連時，手動 `connect()` 立刻把週期歸零。
    *
-   * 等待中或計時器已觸發時不動。
+   * 等待中、計時器已觸發，或這次手動連線已取消等待但握手尚未 `open` 時不動。
    */
   prepareManualConnect: () => void;
   onOpen: () => void;
@@ -280,7 +280,7 @@ export function createReconnect(
 
   return {
     prepareManualConnect() {
-      if (fromTimer) return;
+      if (fromTimer || reusePendingAttempt) return;
       attempt = 0;
       apply({
         nextReconnectAt: 0,

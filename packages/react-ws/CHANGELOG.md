@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A manual `connect()` that fails to construct outside an in-flight reconnect zeros `reconnectAttempt`
 - `connect()` during the provider-unmount `"close"`, or a `connect()` kept after unmount, does not open another socket. React Strict Mode can connect again when the effect runs a second time
-- A `url` or `protocols` getter that calls `disconnect()` and then throws, or returns `""`, still emits `"failure"`. The store stays `closed` / `idle`. A getter that calls `connect()` and then throws does not emit that failure on the new socket
+- A `url` or `protocols` getter that calls `disconnect()` and then throws still emits `"failure"`. A `url` getter that then returns `""` does too. A `protocols` getter that returns `""` is passed through; if it calls `disconnect()` first, the outer `connect()` stops and does not emit. The store stays `closed` / `idle`. A getter that calls `connect()` and then throws does not emit that failure on the new socket
 - Invalid liveness still emits `"failure"` after `"open"` when that handler calls `disconnect()`. The store stays `closed` / `idle`, and liveness does not start. A handler that calls `connect()` leaves the failure for the new socket's `"open"`
 
 ## [0.9.0] - 2026-10-02
