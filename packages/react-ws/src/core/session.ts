@@ -27,7 +27,7 @@ export interface WsSessionOptions extends ReconnectOptions {
    *
    * 若 getter 同步呼叫 `disconnect()` 或 `connect()`，以那次呼叫為準，外層這次 `connect()` 不會再蓋掉它。
    *
-   * 空字串視為建立失敗：觸發 `"error"`，保留既有連線，`connect()` 本身不會 throw。
+   * 空字串視為建立失敗：觸發 `"failure"`，保留既有連線，`connect()` 本身不會 throw。
    */
   url: MaybeGetter<string>;
   /**
@@ -41,7 +41,7 @@ export interface WsSessionOptions extends ReconnectOptions {
   /**
    * 將原始 `MessageEvent.data` 轉換為應用程式資料
    *
-   * 擲出例外時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。
+   * 擲出例外時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。
    *
    * 預設會把字串交給 `JSON.parse`。
    *
@@ -73,38 +73,30 @@ export interface WsEvents {
   /**
    * 收到訊息
    *
-   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"error"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"error"`。`connect()` 已換線之後的擲出，不會算到新 socket 的 `"error"`。
+   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"failure"`。`connect()` 已換線之後的擲出，不會算到新 socket 的 `"failure"`。
    * @param event 這次的 `MessageEvent`。
    */
   message: (parsed: unknown, event: MessageEvent) => void;
-  /** WebSocket 連線建立成功 */
+  /** 原生 WebSocket 的 `"open"`，原樣轉發 `ws.onopen` 的 `Event`。 */
   open: (event: Event) => void;
-  /**
-   * WebSocket、握手、設定值取得或 `parse` 發生錯誤
-   *
-   * 空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗，或 `parse` 擲出時，參數是
-   * `{ type: "error", source: "construct" | "parse", message: string, cause: unknown }`，不是 `Error`。
-   *
-   * 空 URL 的 `message` 為 `"empty url"`。`source` 為 `"construct"` 或 `"parse"`。
-   *
-   * 原生 WebSocket 的 `"error"` 則傳入原本的事件。
-   */
-  error: (
-    event:
-      | Event
-      | {
-          type: "error";
-          source: "construct" | "parse";
-          message: string;
-          cause: unknown;
-        },
-  ) => void;
+  /** 原生 WebSocket 的 `"error"`，原樣轉發 `ws.onerror` 的 `Event`。 */
+  error: (event: Event) => void;
   /**
    * WebSocket 連線關閉
    *
    * `disconnect()`、Provider 卸載，以及成功替換舊連線時也會觸發。
    */
   close: (event: CloseEvent) => void;
+  /**
+   * 不是 socket 事件的失敗。
+   *
+   * 空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出，或無效的 liveness。
+   *
+   * `source` 為 `"construct"` 或 `"parse"`。無效 liveness 的 `source` 是 `"construct"`。
+   *
+   * `cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。
+   */
+  failure: (detail: { source: "construct" | "parse"; cause: unknown }) => void;
 }
 
 export type WsEventsEmitter = Emitter<WsEvents>;
@@ -134,7 +126,7 @@ export interface WsActions {
    *
    * 新的 WebSocket 建構成功後才關閉舊連線，這個方法不會 throw。
    *
-   * URL 為空、getter 擲出，或 `new WebSocket()` 失敗時，觸發 `"error"`，並保留既有連線。
+   * URL 為空、getter 擲出，或 `new WebSocket()` 失敗時，觸發 `"failure"`，並保留既有連線。
    *
    * 若這次呼叫來自已觸發的自動重連計時器，這次嘗試算失敗，並沿用自動重連的排程。
    *
@@ -179,23 +171,6 @@ function resolveConnectTimeoutMs(value: number | undefined): number {
     return 0;
   }
   return Math.min(value, MAX_TIMEOUT_MS);
-}
-
-function internalError(
-  source: "construct" | "parse",
-  cause: unknown,
-): {
-  type: "error";
-  source: "construct" | "parse";
-  message: string;
-  cause: unknown;
-} {
-  return {
-    type: "error",
-    source,
-    message: cause instanceof Error ? cause.message : "unknown",
-    cause,
-  };
 }
 
 function connectTimeoutEvent(): CloseEvent {
@@ -282,18 +257,18 @@ export function createWsSession(options: WsSessionOptions): WsSession {
   function connect(): void {
     if (typeof globalThis.WebSocket === "undefined") {
       const fired = reconnect.clearTimerTrigger();
-      const failure = internalError(
-        "construct",
-        new Error("WebSocket is undefined"),
-      );
+      const detail = {
+        source: "construct" as const,
+        cause: new Error("WebSocket is undefined"),
+      };
       // 現役 socket 還在就留著。沒有的話不能停在 idle，否則和「還沒 connect」一樣。
       if (wsCurrent != null && !fired) {
-        emitter.emit("error", failure);
+        emitter.emit("failure", detail);
         return;
       }
       if (!fired) reconnect.cancel();
       store.setState({ status: "closed", phase: "stopped" });
-      emitter.emit("error", failure);
+      emitter.emit("failure", detail);
       return;
     }
 
@@ -313,8 +288,15 @@ export function createWsSession(options: WsSessionOptions): WsSession {
           ? new WebSocket(resolvedUrl)
           : new WebSocket(resolvedUrl, resolvedProtocols);
     } catch (cause) {
-      // getter 裡的 disconnect／connect 已經收斂，外層不可再改 store
-      if (generation !== connectGeneration) return;
+      // getter 裡的 disconnect／connect 已經收斂，外層不可再改 store。
+      // 新 socket 已接手時，這次失敗不能算到它頭上。
+      // 斷線後沒有接手者，失敗仍要送出。
+      if (generation !== connectGeneration) {
+        if (wsCurrent == null) {
+          emitter.emit("failure", { source: "construct", cause });
+        }
+        return;
+      }
       // 先 store 再 emit，避免 handler 擲出／disconnect 讓這次排程沒寫進去
       const outcome = reconnect.onConstructFailure();
       switch (outcome) {
@@ -327,7 +309,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         default:
           break;
       }
-      emitter.emit("error", internalError("construct", cause));
+      emitter.emit("failure", { source: "construct", cause });
       return;
     }
 
@@ -376,17 +358,20 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       store.setState({ status: "open", phase: "open" });
       // 已經 open 的這顆先通知，第一個 ping 不得早於訂閱者
       emitter.emit("open", event);
-      if (wsCurrent !== ws) return;
+      // 新 socket 已接手時，這次 liveness 失敗不能算到它頭上。
+      // 斷線後沒有接手者，無效 liveness 仍要送出，且不能啟動心跳。
+      if (wsCurrent !== ws && wsCurrent != null) return;
       if (
         livenessOptions &&
         !livenessDelaysOk(livenessOptions.intervalMs, livenessOptions.timeoutMs)
       ) {
-        emitter.emit(
-          "error",
-          internalError("construct", new Error("invalid liveness")),
-        );
+        emitter.emit("failure", {
+          source: "construct",
+          cause: new Error("invalid liveness"),
+        });
         return;
       }
+      if (wsCurrent !== ws) return;
       liveness.start(ws);
     };
 
@@ -399,7 +384,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         // 新 socket 已接手時，這顆舊訊息的失敗不能算到它頭上。
         // 斷線後沒有接手者，parse 的失敗仍要送出去。
         if (wsCurrent !== ws && wsCurrent != null) return;
-        emitter.emit("error", internalError("parse", cause));
+        emitter.emit("failure", { source: "parse", cause });
         return;
       }
       // parse／isPong 可能已斷線或換線，舊訊息不能再送

@@ -9,7 +9,7 @@ import { createStore, type StoreApi } from "./store";
  * - `open`: WebSocket 已連線。
  * - `closed`: WebSocket 已關閉。
  *
- * 連線錯誤由 `useWsEvents("error")` 送出。
+ * 原生 `"error"` 與非 socket 的 `"failure"` 由事件送出，不寫進這個狀態。
  */
 export type WsStatus = "idle" | "connecting" | "open" | "closed";
 

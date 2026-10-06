@@ -236,8 +236,8 @@ describe("createWsSession", () => {
       },
     });
     const errors: string[] = [];
-    session.emitter.on("error", (event) => {
-      if ("message" in event) errors.push(event.message);
+    session.emitter.on("failure", (detail) => {
+      if (detail.cause instanceof Error) errors.push(detail.cause.message);
     });
     session.emitter.on("close", (event) => {
       if (event.reason === "reconnect") {
@@ -267,8 +267,10 @@ describe("createWsSession", () => {
     vi.stubGlobal("WebSocket", undefined);
     const session = createWsSession({ url: "ws://example.test" });
     const errors: string[] = [];
-    session.emitter.on("error", (event) => {
-      if ("message" in event) errors.push(event.message);
+    session.emitter.on("failure", (detail) => {
+      if (detail.source === "construct" && detail.cause instanceof Error) {
+        errors.push(detail.cause.message);
+      }
     });
 
     session.connect();
@@ -286,8 +288,10 @@ describe("createWsSession", () => {
     session.connect();
     latestSocket().open();
     const errors: string[] = [];
-    session.emitter.on("error", (event) => {
-      if ("message" in event) errors.push(event.message);
+    session.emitter.on("failure", (detail) => {
+      if (detail.source === "construct" && detail.cause instanceof Error) {
+        errors.push(detail.cause.message);
+      }
     });
 
     vi.stubGlobal("WebSocket", undefined);
@@ -325,6 +329,92 @@ describe("createWsSession", () => {
     expect(session.getState().phase).toBe("stopped");
   });
 
+  it("getter that disconnects and throws still reports the failure", () => {
+    const session = createWsSession({
+      url: () => {
+        session.disconnect();
+        throw new Error("no token");
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    const errors: Event[] = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+    session.emitter.on("error", (event) => {
+      errors.push(event);
+    });
+
+    session.connect();
+
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "no token" }),
+      },
+    ]);
+    expect(errors).toEqual([]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("getter that disconnects and returns an empty url still reports the failure", () => {
+    const session = createWsSession({
+      url: () => {
+        session.disconnect();
+        return "";
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "empty url" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("getter that connects and then throws does not report on the new socket", () => {
+    let nested = false;
+    const session = createWsSession({
+      url: () => {
+        if (!nested) {
+          nested = true;
+          session.connect();
+          throw new Error("outer");
+        }
+        return "ws://example.test";
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+
+    expect(failures).toEqual([]);
+    expect(session.getState()).toMatchObject({
+      status: "connecting",
+      phase: "connecting",
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
   it("parse that disconnects does not deliver the message", () => {
     const session = createWsSession({
       url: "ws://example.test",
@@ -349,7 +439,7 @@ describe("createWsSession", () => {
     });
   });
 
-  it("parse that disconnects and throws still reports the parse error", () => {
+  it("parse that disconnects and throws still reports the parse failure", () => {
     const session = createWsSession({
       url: "ws://example.test",
       parse: () => {
@@ -362,9 +452,9 @@ describe("createWsSession", () => {
     session.emitter.on("message", (data) => {
       messages.push(data);
     });
-    session.emitter.on("error", (event) => {
-      if ("source" in event && event.source === "parse") {
-        errors.push(event.message);
+    session.emitter.on("failure", (detail) => {
+      if (detail.source === "parse" && detail.cause instanceof Error) {
+        errors.push(detail.cause.message);
       }
     });
 
@@ -396,9 +486,9 @@ describe("createWsSession", () => {
     session.emitter.on("message", (data) => {
       messages.push(data);
     });
-    session.emitter.on("error", (event) => {
-      if ("source" in event && event.source === "parse") {
-        errors.push(event.message);
+    session.emitter.on("failure", (detail) => {
+      if (detail.source === "parse" && detail.cause instanceof Error) {
+        errors.push(detail.cause.message);
       }
     });
 
@@ -486,9 +576,9 @@ describe("createWsSession", () => {
         isPong: () => false,
       },
     });
-    const errors: string[] = [];
-    session.emitter.on("error", (event) => {
-      if ("message" in event) errors.push(event.message);
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
     });
 
     session.connect();
@@ -500,10 +590,95 @@ describe("createWsSession", () => {
     socket.open();
 
     expect(session.getState()).toMatchObject({ status: "open", phase: "open" });
-    expect(errors).toEqual(["invalid liveness"]);
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "invalid liveness" }),
+      },
+    ]);
     vi.advanceTimersByTime(10_000);
     expect(sent).toEqual([]);
     expect(session.getState().status).toBe("open");
     expect(socket.readyState).toBe(MockWebSocket.OPEN);
+  });
+
+  it("invalid liveness disconnect inside open still reports the failure", () => {
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 0,
+        timeoutMs: 0,
+        ping: "ping",
+        isPong: () => false,
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("open", () => {
+      session.disconnect();
+    });
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "invalid liveness" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  it("invalid liveness connect inside open reports on the new socket", () => {
+    let swapped = false;
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 0,
+        timeoutMs: 0,
+        ping: "ping",
+        isPong: () => false,
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("open", () => {
+      if (swapped) return;
+      swapped = true;
+      session.connect();
+    });
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    latestSocket().open();
+
+    expect(failures).toEqual([]);
+    expect(session.getState()).toMatchObject({
+      status: "connecting",
+      phase: "connecting",
+    });
+
+    latestSocket().open();
+
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "invalid liveness" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "open",
+      phase: "open",
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 });

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- `"error"` is only the native `Event` from `ws.onerror`. Empty URL, a getter throw, `new WebSocket()` failing, a missing `WebSocket`, a thrown `parse`, and invalid liveness emit `"failure"` as `{ source: "construct" | "parse", cause }`. Invalid liveness stays `source: "construct"`. The detail has no `type` or `message`. Those failures are not socket events, so they no longer share `"error"` with `Event`. `connect()` still does not throw, and nothing is written into `WsState`. An existing socket stays up. A thrown `parse` still skips `"message"` and does not close the socket
+
+### Fixed
+
+- A `url` or `protocols` getter that calls `disconnect()` and then throws, or returns `""`, still emits `"failure"`. The store stays `closed` / `idle`. A getter that calls `connect()` and then throws does not emit that failure on the new socket
+- Invalid liveness still emits `"failure"` after `"open"` when that handler calls `disconnect()`. The store stays `closed` / `idle`, and liveness does not start. A handler that calls `connect()` leaves the failure for the new socket's `"open"`
+
 ## [0.9.0] - 2026-10-02
 
 ### Breaking

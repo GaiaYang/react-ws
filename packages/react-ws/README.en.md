@@ -101,7 +101,7 @@ WebSocket ──→ Events ─────────────→ Event hand
 - Connection state (`status` / `phase`) and reconnect progress
 - Auto-reconnect after an unintentional close (backoff, cap, jitter)
 - Application-layer liveness (optional)
-- Dispatch of `"message"` / `"error"` after `parse`
+- Dispatch of `"message"` after `parse`, and `"failure"` when that `parse` throws
 
 ### What this package does not handle
 
@@ -184,7 +184,7 @@ After `disconnect()`, the state becomes:
 
 `status` does not return to `idle`.
 
-Connection errors are not a `WsStatus`. They are reported through `useWsEvents("error")`.
+Connection errors are not a `WsStatus`. A native WebSocket `"error"` is reported through `useWsEvents("error")`. Failures that are not socket events are reported through `useWsEvents("failure")`. Neither is written into `WsState`.
 
 After a native WebSocket `"error"`, a `"close"` usually follows.
 
@@ -231,7 +231,7 @@ MessageEvent
     ▼
   parse()
     │
-    ├── throw ──→ "error"
+    ├── throw ──→ "failure"
     │              │
     │              ├── do not fire "message"
     │              └── do not close the WebSocket
@@ -248,16 +248,17 @@ Default `parse` behavior:
 - If JSON parsing fails, the raw string is returned
 - Non-string data is returned as-is
 
-If `parse` calls `disconnect()` or `connect()` and this socket is no longer current when `parse` returns, `"message"` does not fire. A throw after `disconnect()` still fires `"error"` when no new socket took over. A throw after `connect()` replaced the socket does not fire `"error"` on the new one.
+If `parse` calls `disconnect()` or `connect()` and this socket is no longer current when `parse` returns, `"message"` does not fire. A throw after `disconnect()` still fires `"failure"` when no new socket took over. A throw after `connect()` replaced the socket does not fire `"failure"` on the new one.
 
 ### Event types
 
-| `type`      | Handler                                        | Description                                                                                                                                                                                                                                                                  |
-| ----------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"message"` | `(data: unknown, event: MessageEvent) => void` | `data` is the result after `parse`.                                                                                                                                                                                                                                          |
-| `"open"`    | `(event: Event) => void`                       | The WebSocket connection opened.                                                                                                                                                                                                                                             |
-| `"error"`   | `(event) => void`                              | A native WebSocket `"error"` passes the original `Event`. An empty URL, a getter throw, a `new WebSocket()` throw, or a thrown `parse` passes `{ type: "error", source: "construct" \| "parse", message, cause }`, not an `Error`. The empty-URL `message` is `"empty url"`. |
-| `"close"`   | `(event: CloseEvent) => void`                  | The WebSocket connection closed.                                                                                                                                                                                                                                             |
+| `type`      | Handler                                                                | Description                                                                                                                                                                                                                                                                                                                          |
+| ----------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"message"` | `(data: unknown, event: MessageEvent) => void`                         | `data` is the result after `parse`.                                                                                                                                                                                                                                                                                                  |
+| `"open"`    | `(event: Event) => void`                                               | The WebSocket connection opened.                                                                                                                                                                                                                                                                                                     |
+| `"error"`   | `(event: Event) => void`                                               | The original `Event` from the native WebSocket `"error"`.                                                                                                                                                                                                                                                                            |
+| `"failure"` | `(detail: { source: "construct" \| "parse"; cause: unknown }) => void` | Not a socket event, and not an `Event`. Empty URL, a getter throw, a `new WebSocket()` throw, a missing `WebSocket`, a thrown `parse`, or invalid liveness. Invalid liveness stays `"construct"`. `cause` is the thrown value. An empty URL's `cause` is an `Error` whose message is `"empty url"`. There is no `type` or `message`. |
+| `"close"`   | `(event: CloseEvent) => void`                                          | The WebSocket connection closed.                                                                                                                                                                                                                                                                                                     |
 
 ### Subscription behavior
 
@@ -275,13 +276,13 @@ A single handler's exception does not affect other subscribers and does not inte
 
 ### Ordering and failure behavior
 
-| Case                                          | `"error"`                                                   | `"close"`                        | WebSocket / store                                                                                                                                                                                                                                                                                                                                             |
-| --------------------------------------------- | ----------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unintentional close                           | May fire. A native WebSocket usually fires `"error"` first. | Fires                            | Update `status: "closed"` and the matching `phase` first, then run the `"close"` handler                                                                                                                                                                                                                                                                      |
-| `disconnect()` / Provider unmount             | Does not fire                                               | Fires when a WebSocket exists    | Update the store first, then close the WebSocket                                                                                                                                                                                                                                                                                                              |
-| Handshake / resolve / `new WebSocket` failure | Fires, with `source`, `message`, and `cause`                | Does not fire                    | Does not replace the existing WebSocket. If an already-fired auto-reconnect timer fails below `reconnectMax`, it schedules again and `phase` stays `reconnecting`. At the cap it becomes `closed` / `stopped` and `reconnectExhausted` is `true`. A pending wait reschedules the same `reconnectAttempt`. See [Reconnect](#reconnect).                        |
-| `parse` throws                                | Fires                                                       | Does not fire                    | Does not fire `"message"`, and does not close the WebSocket                                                                                                                                                                                                                                                                                                   |
-| `connect()` replaces an old connection        | Does not fire                                               | Fires, with reason `"reconnect"` | Before the `"close"` handler, `status` is `closed` (not `open`), so `send` returns `false`. After the handler, if this `connect()` still owns the socket, `status` becomes `"connecting"`. A `connect()` in that handler that fails to construct keeps the socket already built. See [Reconnect → `connect()` replacement rules](#connect-replacement-rules). |
+| Case                                          | `"error"`                                                   | `"failure"`                                                       | `"close"`                        | WebSocket / store                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unintentional close                           | May fire. A native WebSocket usually fires `"error"` first. | Does not fire                                                     | Fires                            | Update `status: "closed"` and the matching `phase` first, then run the `"close"` handler                                                                                                                                                                                                                                                                      |
+| `disconnect()` / Provider unmount             | Does not fire                                               | Does not fire                                                     | Fires when a WebSocket exists    | Update the store first, then close the WebSocket                                                                                                                                                                                                                                                                                                              |
+| Handshake / resolve / `new WebSocket` failure | Does not fire                                               | Fires. `source` is `"construct"`, and `cause` is the thrown value | Does not fire                    | Does not replace the existing WebSocket. If an already-fired auto-reconnect timer fails below `reconnectMax`, it schedules again and `phase` stays `reconnecting`. At the cap it becomes `closed` / `stopped` and `reconnectExhausted` is `true`. A pending wait reschedules the same `reconnectAttempt`. See [Reconnect](#reconnect).                        |
+| `parse` throws                                | Does not fire                                               | Fires. `source` is `"parse"`, and `cause` is the thrown value     | Does not fire                    | Does not fire `"message"`, and does not close the WebSocket                                                                                                                                                                                                                                                                                                   |
+| `connect()` replaces an old connection        | Does not fire                                               | Does not fire                                                     | Fires, with reason `"reconnect"` | Before the `"close"` handler, `status` is `closed` (not `open`), so `send` returns `false`. After the handler, if this `connect()` still owns the socket, `status` becomes `"connecting"`. A `connect()` in that handler that fails to construct keeps the socket already built. See [Reconnect → `connect()` replacement rules](#connect-replacement-rules). |
 
 ## Reconnect
 
@@ -417,7 +418,7 @@ If creating the WebSocket fails, for example:
 - The URL is empty
 - `new WebSocket()` throws
 
-an `"error"` event fires (`source` is `"construct"`, with `message` and `cause`), and `connect()` itself does not throw.
+a `"failure"` event fires (`source` is `"construct"`, and `cause` is the thrown value), and `connect()` itself does not throw.
 
 The existing WebSocket stays as it is.
 
@@ -522,7 +523,7 @@ A message still fires `"message"` when it is recognized as a pong.
 
 If `ping` throws, that ping is not sent, but the pong wait still starts.
 
-`intervalMs` and `timeoutMs` must be finite and greater than `0`. `0`, negative, and non-finite values do not send pings and do not close the socket. `"open"` still fires, then `"error"` with `source: "construct"` and `message: "invalid liveness"`.
+`intervalMs` and `timeoutMs` must be finite and greater than `0`. `0`, negative, and non-finite values do not send pings and do not close the socket. `"open"` still fires, then `"failure"` with `source: "construct"` and `cause` an `Error` whose message is `"invalid liveness"`.
 
 When `intervalMs` and `timeoutMs` are both finite and greater than `0`, no matching pong before `timeoutMs` closes the WebSocket.
 
@@ -572,7 +573,7 @@ To use different options, call `createWsContext` again and create another contex
 | `reconnectDelayMaxMs`  | `number`                                  | `30000`                                 | Cap in milliseconds for one wait, including jitter. `0` means no cap.                                                                                                    |
 | `reconnectJitter`      | `number`                                  | `0.5`                                   | How much to randomly shorten the wait, in `[0, 1]`. By default the actual wait is shortened by a random 0% to 50%. `1` is full jitter, and `0` means no jitter.          |
 | `reconnectMinUptimeMs` | `number`                                  | `5000`                                  | How long the WebSocket must stay open, in milliseconds, before the reconnect cycle resets. `0` resets immediately after `open`. A non-finite value uses this default.    |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | see [Message parsing](#message-parsing) | Maps raw `MessageEvent.data` to application data. A throw fires `"error"`, does not fire `"message"`, and does not close the WebSocket.                                  |
+| `parse`                | `(data: MessageEvent["data"]) => unknown` | see [Message parsing](#message-parsing) | Maps raw `MessageEvent.data` to application data. A throw fires `"failure"`, does not fire `"message"`, and does not close the WebSocket.                                |
 | `liveness`             | `LivenessOptions`                         | none                                    | Application-layer heartbeat. Disabled when omitted.                                                                                                                      |
 
 Getters for `url` and `protocols` must run synchronously. Do not `await` or call hooks inside them. If a getter synchronously calls `disconnect()` or `connect()`, that call wins.
@@ -696,7 +697,7 @@ For event types and subscription behavior, see [Events](#events).
 - Requires React 18+ and `useSyncExternalStore`.
 - No runtime npm dependencies.
 - Needs `globalThis.WebSocket`.
-- Without `WebSocket`, `connect()` does not open a connection. It emits `"error"` with `source: "construct"` and `message: "WebSocket is undefined"`.
+- Without `WebSocket`, `connect()` does not open a connection. It emits `"failure"` with `source: "construct"` and `cause` an `Error` whose message is `"WebSocket is undefined"`.
 - If no socket is current, including the first `connect()` and an already-fired auto-reconnect timer, the store becomes `status: "closed"`, `phase: "stopped"`. A current socket stays as it is.
 - The package entry includes `"use client"`, for the Next.js App Router. A regular SPA ignores the directive.
 

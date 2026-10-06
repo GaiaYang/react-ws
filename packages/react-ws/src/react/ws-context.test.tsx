@@ -5,6 +5,7 @@ import type { WsEvents } from "../core/session";
 import { createWsContext } from "./create-ws-context";
 
 type WsErrorEvent = Parameters<WsEvents["error"]>[0];
+type WsFailure = Parameters<WsEvents["failure"]>[0];
 
 type WsListener = ((ev: Event) => void) | null;
 
@@ -578,8 +579,8 @@ describe("createWsContext", () => {
     expect(latestWs().url).toBe("ws://test/b");
   });
 
-  it("getter throw before connect emits error and stays idle", async () => {
-    const errors: WsErrorEvent[] = [];
+  it("getter throw before connect emits failure and stays idle", async () => {
+    const failures: WsFailure[] = [];
 
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => {
@@ -591,8 +592,8 @@ describe("createWsContext", () => {
     function Probe() {
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       return createElement(
         "div",
@@ -610,17 +611,16 @@ describe("createWsContext", () => {
     expect(
       container.querySelector("[data-phase]")?.getAttribute("data-phase"),
     ).toBe("idle");
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      type: "error",
-      source: "construct",
-      message: "no token",
-      cause: expect.any(Error),
-    });
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "no token" }),
+      },
+    ]);
   });
 
   it("empty url is the same as getter throw", async () => {
-    const errors: WsErrorEvent[] = [];
+    const failures: WsFailure[] = [];
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: () => "",
       autoConnect: true,
@@ -629,8 +629,8 @@ describe("createWsContext", () => {
     function Probe() {
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       return createElement(
         "div",
@@ -648,13 +648,12 @@ describe("createWsContext", () => {
     expect(
       container.querySelector("[data-phase]")?.getAttribute("data-phase"),
     ).toBe("idle");
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      type: "error",
-      source: "construct",
-      message: "empty url",
-      cause: expect.any(Error),
-    });
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "empty url" }),
+      },
+    ]);
   });
 
   it("disconnect inside url getter is not overwritten by connect", async () => {
@@ -973,7 +972,7 @@ describe("createWsContext", () => {
   it("connect without WebSocket reports failure instead of staying idle", async () => {
     vi.stubGlobal("WebSocket", undefined);
 
-    const errors: WsErrorEvent[] = [];
+    const failures: WsFailure[] = [];
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
@@ -986,8 +985,8 @@ describe("createWsContext", () => {
       api = useWsActions();
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       return createElement("div", {
         "data-status": status,
@@ -1002,13 +1001,15 @@ describe("createWsContext", () => {
       container.querySelector("[data-status]")?.getAttribute("data-status");
     const phase = () =>
       container.querySelector("[data-phase]")?.getAttribute("data-phase");
+    const undefinedWs = {
+      source: "construct" as const,
+      cause: expect.objectContaining({ message: "WebSocket is undefined" }),
+    };
 
     expect(MockWebSocket.instances).toHaveLength(0);
     expect(status()).toBe("closed");
     expect(phase()).toBe("stopped");
-    expect(errors).toMatchObject([
-      { source: "construct", message: "WebSocket is undefined" },
-    ]);
+    expect(failures).toEqual([undefinedWs]);
 
     await act(async () => {
       api.connect();
@@ -1016,11 +1017,11 @@ describe("createWsContext", () => {
     expect(MockWebSocket.instances).toHaveLength(0);
     expect(status()).toBe("closed");
     expect(phase()).toBe("stopped");
-    expect(errors).toHaveLength(2);
+    expect(failures).toEqual([undefinedWs, undefinedWs]);
   });
 
-  it("synthetic close and error work without Event/CloseEvent constructors", async () => {
-    const errors: WsErrorEvent[] = [];
+  it("synthetic close and failure work without Event/CloseEvent constructors", async () => {
+    const failures: WsFailure[] = [];
     const closes: CloseEvent[] = [];
     let shouldThrow = false;
 
@@ -1036,8 +1037,8 @@ describe("createWsContext", () => {
 
     function Probe() {
       api = useWsActions();
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       useWsEvents("close", (event) => {
         closes.push(event);
@@ -1058,13 +1059,12 @@ describe("createWsContext", () => {
     await act(async () => {
       api.connect();
     });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      type: "error",
-      source: "construct",
-      message: "no token",
-      cause: expect.any(Error),
-    });
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "no token" }),
+      },
+    ]);
     expect(first.readyState).toBe(MockWebSocket.OPEN);
 
     await act(async () => {
@@ -1109,10 +1109,10 @@ describe("createWsContext", () => {
     expect(messages).toEqual([{ type: "PONG" }]);
   });
 
-  it("parse throw emits error, skips message, and keeps the socket", async () => {
+  it("parse throw emits failure, skips message, and keeps the socket", async () => {
     vi.useFakeTimers();
     const messages: unknown[] = [];
-    const errors: WsErrorEvent[] = [];
+    const failures: WsFailure[] = [];
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
@@ -1133,8 +1133,8 @@ describe("createWsContext", () => {
       useWsEvents("message", (data) => {
         messages.push(data);
       });
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       return createElement("div", { "data-status": status }, status);
     }
@@ -1152,13 +1152,12 @@ describe("createWsContext", () => {
       latestWs().message({ type: "PONG" });
     });
     expect(messages).toEqual([]);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      type: "error",
-      source: "parse",
-      message: "parse",
-      cause: expect.any(Error),
-    });
+    expect(failures).toEqual([
+      {
+        source: "parse",
+        cause: expect.objectContaining({ message: "parse" }),
+      },
+    ]);
     expect(status()).toBe("open");
     expect(latestWs().readyState).toBe(MockWebSocket.OPEN);
 
@@ -1971,7 +1970,7 @@ describe("createWsContext", () => {
   it("getter throw while waiting reschedules the same attempt", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
-    const errors: WsErrorEvent[] = [];
+    const failures: WsFailure[] = [];
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: () => {
@@ -1991,8 +1990,8 @@ describe("createWsContext", () => {
       const phase = useWsState((s) => s.phase);
       const reconnectAttempt = useWsState((s) => s.reconnectAttempt);
       const nextReconnectAt = useWsState((s) => s.nextReconnectAt);
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       return createElement("div", {
         "data-phase": phase,
@@ -2025,13 +2024,12 @@ describe("createWsContext", () => {
     await act(async () => {
       api.connect();
     });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      type: "error",
-      source: "construct",
-      message: "no token",
-      cause: expect.any(Error),
-    });
+    expect(failures).toEqual([
+      {
+        source: "construct",
+        cause: expect.objectContaining({ message: "no token" }),
+      },
+    ]);
     expect(phase()).toBe("reconnecting");
     expect(attempt()).toBe("1");
     expect(nextAt()).toBeGreaterThan(Date.now());
@@ -2119,7 +2117,7 @@ describe("createWsContext", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 
-  it("handshake error handler disconnect stays idle", async () => {
+  it("handshake failure handler disconnect stays idle", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
@@ -2140,7 +2138,7 @@ describe("createWsContext", () => {
       api = useWsActions();
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
-      useWsEvents("error", () => {
+      useWsEvents("failure", () => {
         api.disconnect();
       });
       return createElement("div", {
@@ -2173,7 +2171,7 @@ describe("createWsContext", () => {
     expect(phase()).toBe("idle");
   });
 
-  it("handshake error handler throw still reschedules", async () => {
+  it("handshake failure handler throw still reschedules", async () => {
     vi.useFakeTimers();
     let shouldThrow = false;
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
@@ -2191,7 +2189,7 @@ describe("createWsContext", () => {
     function Probe() {
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
-      useWsEvents("error", () => {
+      useWsEvents("failure", () => {
         throw new Error("handler");
       });
       return createElement("div", {
@@ -2461,9 +2459,9 @@ describe("createWsContext", () => {
     expect(errors).toEqual([event]);
   });
 
-  it("non-error construct failure uses unknown message", async () => {
+  it("non-Error construct failure passes the cause", async () => {
     const cause = Symbol("no token");
-    const errors: WsErrorEvent[] = [];
+    const failures: WsFailure[] = [];
     const { WsProvider, useWsEvents } = createWsContext({
       url: () => {
         throw cause;
@@ -2472,19 +2470,14 @@ describe("createWsContext", () => {
     });
 
     function Probe() {
-      useWsEvents("error", (event) => {
-        errors.push(event);
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
       });
       return null;
     }
 
     render(createElement(WsProvider, null, createElement(Probe)));
-    expect(errors[0]).toMatchObject({
-      type: "error",
-      source: "construct",
-      message: "unknown",
-      cause,
-    });
+    expect(failures).toEqual([{ source: "construct", cause }]);
   });
 
   it("connectTimeoutMs 0 leaves a stuck handshake connecting", async () => {
