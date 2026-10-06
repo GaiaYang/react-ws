@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- Invalid liveness emits `"failure"` with `source: "liveness"` instead of `"construct"`. `cause` is still an `Error` whose message is `"invalid liveness"`
+
 ## [0.10.0] - 2026-10-07
 
 ### Added

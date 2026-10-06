@@ -798,7 +798,7 @@ describe("createWsSession", () => {
     expect(session.getState()).toMatchObject({ status: "open", phase: "open" });
     expect(failures).toEqual([
       {
-        source: "construct",
+        source: "liveness",
         cause: expect.objectContaining({ message: "invalid liveness" }),
       },
     ]);
@@ -832,7 +832,7 @@ describe("createWsSession", () => {
 
     expect(failures).toEqual([
       {
-        source: "construct",
+        source: "liveness",
         cause: expect.objectContaining({ message: "invalid liveness" }),
       },
     ]);
@@ -877,7 +877,7 @@ describe("createWsSession", () => {
 
     expect(failures).toEqual([
       {
-        source: "construct",
+        source: "liveness",
         cause: expect.objectContaining({ message: "invalid liveness" }),
       },
     ]);

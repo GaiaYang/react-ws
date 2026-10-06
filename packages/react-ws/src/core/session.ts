@@ -90,16 +90,17 @@ export interface WsEvents {
    */
   close: (event: CloseEvent) => void;
   /**
-   * 不是 socket 事件的失敗。
+   * 不是 socket 事件的失敗。`cause` 是擲出的值（或套件建立的 `Error`）。
    *
-   * 空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出、`isPong` 擲出，或無效的 liveness。
-   *
-   * `source` 為 `"construct"`、`"parse"` 或 `"isPong"`。無效 liveness 的 `source` 是 `"construct"`。
-   *
-   * `cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。
+   * - `"construct"`：空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗，或沒有 `WebSocket`。
+   *   - 空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。
+   *   - 沒有 `WebSocket` 的 `cause` 是 `Error`，其 `message` 為 `"WebSocket is undefined"`。
+   * - `"parse"`：`parse` 擲出。
+   * - `"isPong"`：`isPong` 擲出。
+   * - `"liveness"`：`intervalMs`／`timeoutMs` 無效。`cause` 是 `Error`，其 `message` 為 `"invalid liveness"`。
    */
   failure: (detail: {
-    source: "construct" | "parse" | "isPong";
+    source: "construct" | "parse" | "isPong" | "liveness";
     cause: unknown;
   }) => void;
 }
@@ -392,7 +393,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         !livenessDelaysOk(livenessOptions.intervalMs, livenessOptions.timeoutMs)
       ) {
         emitter.emit("failure", {
-          source: "construct",
+          source: "liveness",
           cause: new Error("invalid liveness"),
         });
         return;

@@ -257,7 +257,7 @@ MessageEvent
 | `"message"` | `(data: unknown, event: MessageEvent) => void`                                     | `data` 是經過 `parse` 處理後的結果。                                                                                                                                                                                                                                                                                                           |
 | `"open"`    | `(event: Event) => void`                                                           | WebSocket 連線建立成功。                                                                                                                                                                                                                                                                                                                       |
 | `"error"`   | `(event: Event) => void`                                                           | 原生 WebSocket 的 `"error"`，原樣傳入 `Event`。                                                                                                                                                                                                                                                                                                |
-| `"failure"` | `(detail: { source: "construct" \| "parse" \| "isPong"; cause: unknown }) => void` | 不是 socket 事件，也不是 `Event`。空 URL、getter 擲出、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出、`isPong` 擲出，或無效的 liveness。無效 liveness 的 `source` 維持 `"construct"`。`isPong` 的 `source` 是 `"isPong"`。`cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。沒有 `type` 或 `message`。 |
+| `"failure"` | `(detail: { source: "construct" \| "parse" \| "isPong" \| "liveness"; cause: unknown }) => void` | 不是 socket 事件，也不是 `Event`。空 URL、getter 擲出、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出、`isPong` 擲出，或無效的 liveness。無效 liveness 的 `source` 是 `"liveness"`。`isPong` 的 `source` 是 `"isPong"`。`cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。無效 liveness 的 `cause` 是 `Error`，其 `message` 為 `"invalid liveness"`。沒有 `type` 或 `message`。 |
 | `"close"`   | `(event: CloseEvent) => void`                                                      | WebSocket 連線關閉。                                                                                                                                                                                                                                                                                                                           |
 
 ### 訂閱行為
@@ -523,7 +523,7 @@ isPong()
 
 如果 `ping` 擲出例外，該次 ping 不會送出，但仍會開始等待 pong。
 
-`intervalMs` 與 `timeoutMs` 必須是大於 `0` 的有限數。`0`、負數、非有限數不會送 ping，也不會關閉 socket。`"open"` 仍會觸發，接著觸發 `"failure"`，`source` 為 `"construct"`，`cause` 是 `Error`，其 `message` 為 `"invalid liveness"`。
+`intervalMs` 與 `timeoutMs` 必須是大於 `0` 的有限數。`0`、負數、非有限數不會送 ping，也不會關閉 socket。`"open"` 仍會觸發，接著觸發 `"failure"`，`source` 為 `"liveness"`，`cause` 是 `Error`，其 `message` 為 `"invalid liveness"`。
 
 `intervalMs` 與 `timeoutMs` 都是大於 `0` 的有限數時，超過 `timeoutMs` 仍未收到符合條件的 pong，WebSocket 會被關閉。
 
