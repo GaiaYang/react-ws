@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `"failure"` `source` includes `"isPong"` when `isPong` throws. The message still fires while that socket is current, and the pong wait is not cleared. A throw after `disconnect()` or a socket swap still emits `"failure"` and does not emit `"message"`
+
 ### Breaking
 
 - `"error"` is only the native `Event` from `ws.onerror`. Empty URL, a getter throw, `new WebSocket()` failing, a missing `WebSocket`, a thrown `parse`, and invalid liveness emit `"failure"` as `{ source: "construct" | "parse", cause }`. Invalid liveness stays `source: "construct"`. The detail has no `type` or `message`. Those failures are not socket events, so they no longer share `"error"` with `Event`. `connect()` still does not throw, and nothing is written into `WsState`. An existing socket stays up. A thrown `parse` still skips `"message"` and does not close the socket
 
 ### Fixed
 
+- A manual `connect()` that fails to construct outside an in-flight reconnect zeros `reconnectAttempt`
+- `connect()` during the provider-unmount `"close"`, or a `connect()` kept after unmount, does not open another socket. React Strict Mode can connect again when the effect runs a second time
 - A `url` or `protocols` getter that calls `disconnect()` and then throws, or returns `""`, still emits `"failure"`. The store stays `closed` / `idle`. A getter that calls `connect()` and then throws does not emit that failure on the new socket
 - Invalid liveness still emits `"failure"` after `"open"` when that handler calls `disconnect()`. The store stays `closed` / `idle`, and liveness does not start. A handler that calls `connect()` leaves the failure for the new socket's `"open"`
 

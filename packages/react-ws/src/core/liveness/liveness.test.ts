@@ -263,6 +263,26 @@ describe("liveness", () => {
     expect(onTimeout).toHaveBeenCalledTimes(1);
   });
 
+  it("sync pong during ping send does not time out that wait", () => {
+    const onTimeout = vi.fn();
+    const controller = createLivenessController(
+      {
+        intervalMs: 10_000,
+        timeoutMs: 1_000,
+        ping: "ping",
+        isPong: (data) => data === "PONG",
+      },
+      onTimeout,
+    );
+
+    controller.start(() => {
+      controller.onMessage("PONG");
+    });
+
+    vi.advanceTimersByTime(1_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+
   it("isPong throw does not clear timeout", () => {
     const onTimeout = vi.fn();
     const controller = createLivenessController(
@@ -278,7 +298,7 @@ describe("liveness", () => {
     );
 
     controller.start(() => {});
-    expect(() => controller.onMessage({ type: "PONG" })).not.toThrow();
+    expect(() => controller.onMessage({ type: "PONG" })).toThrow("isPong");
 
     vi.advanceTimersByTime(500);
     expect(onTimeout).toHaveBeenCalledTimes(1);

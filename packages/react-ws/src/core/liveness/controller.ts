@@ -60,13 +60,13 @@ export function createLivenessController(
   }
 
   function tick(): void {
+    // 先掛逾時。send 同步送進的 pong 才清得掉這次等待；ping 擲出也仍在等
+    armTimeout();
     try {
       sendPingRef?.();
     } catch {
       void 0;
     }
-    // 不論 ping 成敗都掛逾時，否則死線偵測不到
-    armTimeout();
   }
 
   return {
@@ -90,11 +90,7 @@ export function createLivenessController(
       sendPingRef = null;
     },
     onMessage(data) {
-      try {
-        if (isPong(data)) clearTimeoutTimer();
-      } catch {
-        void 0;
-      }
+      if (isPong(data)) clearTimeoutTimer();
     },
   };
 }

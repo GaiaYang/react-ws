@@ -32,6 +32,7 @@ export function createWsContext(options: CreateWsContextOptions) {
     const [session] = useState(() => createWsSession(sessionOptions));
 
     useEffect(() => {
+      session.attach();
       if (autoConnect) session.connect();
       return () => session.teardown("provider unmount");
     }, [session]);

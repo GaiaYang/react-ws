@@ -158,6 +158,12 @@ export interface Reconnect {
    * 等待中的手動 `connect()` 回 `false`（phase 用），attempt 仍不歸零。
    */
   onConnectBegin: () => boolean;
+  /**
+   * 沒有進行中的自動重連時，手動 `connect()` 立刻把週期歸零。
+   *
+   * 等待中或計時器已觸發時不動。
+   */
+  prepareManualConnect: () => void;
   onOpen: () => void;
   scheduleAfterClose: () => boolean;
   /**
@@ -273,6 +279,15 @@ export function createReconnect(
   };
 
   return {
+    prepareManualConnect() {
+      if (fromTimer) return;
+      attempt = 0;
+      apply({
+        nextReconnectAt: 0,
+        reconnectAttempt: 0,
+        reconnectExhausted: false,
+      });
+    },
     onConnectBegin() {
       // clearTimer 之後分不出「還在等」和「已經觸發」
       const fired = fromTimer && timer == null;

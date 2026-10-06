@@ -25,7 +25,9 @@ export interface LivenessOptions {
    *
    * 只有回傳 `true` 才視為 Pong，並結束這次等待。
    *
-   * 擲出例外時視為不是 Pong，該則訊息仍會觸發 `"message"`。
+   * 擲出例外時視為不是 Pong，並觸發 `"failure"`，`source` 為 `"isPong"`。這顆 socket 仍是現役時，該則訊息仍會觸發 `"message"`。
+   *
+   * 同步 `disconnect()` 或 `connect()` 後，這顆 socket 已不是現役時不會再觸發 `"message"`。擲出仍會觸發 `"failure"`。
    */
   isPong: (data: unknown) => boolean;
 }

@@ -122,6 +122,19 @@ describe("environment: WebSocket-only runtime", () => {
     expect(closes.some((ev) => ev.reason === "client disconnect")).toBe(true);
   });
 
+  it("clientCloseEvent is a CloseEvent when the constructor exists", () => {
+    const event = clientCloseEvent("client disconnect");
+    expect(event).toBeInstanceOf(CloseEvent);
+    expect(event.reason).toBe("client disconnect");
+    expect(event.code).toBe(1000);
+    expect(() => event.preventDefault()).not.toThrow();
+
+    const timeout = clientCloseEvent("liveness timeout", 1006, false);
+    expect(timeout).toBeInstanceOf(CloseEvent);
+    expect(timeout.code).toBe(1006);
+    expect(timeout.wasClean).toBe(false);
+  });
+
   it("clientCloseEvent works without CloseEvent", () => {
     vi.stubGlobal("CloseEvent", undefined);
     expect(clientCloseEvent("client disconnect")).toEqual({

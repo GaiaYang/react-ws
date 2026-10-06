@@ -305,13 +305,17 @@ describe("createWsSession", () => {
     expect(latestSocket().readyState).toBe(MockWebSocket.OPEN);
   });
 
-  it("connect without WebSocket while waiting stops instead of leaving the timer", () => {
+  it("connect without WebSocket while waiting does not schedule another attempt", () => {
     vi.useFakeTimers();
     const session = createWsSession({
       url: "ws://example.test",
       reconnectMs: 100,
       reconnectBackoff: 1,
       reconnectJitter: 0,
+    });
+    const failures: string[] = [];
+    session.emitter.on("failure", (detail) => {
+      if (detail.cause instanceof Error) failures.push(detail.cause.message);
     });
     session.connect();
     latestSocket().open();
@@ -321,12 +325,58 @@ describe("createWsSession", () => {
     vi.stubGlobal("WebSocket", undefined);
     session.connect();
 
+    expect(failures).toEqual(["WebSocket is undefined"]);
     expect(session.getState()).toMatchObject({
       status: "closed",
       phase: "stopped",
+      reconnectAttempt: 0,
+      reconnectExhausted: false,
+      nextReconnectAt: 0,
     });
+
+    vi.stubGlobal("WebSocket", MockWebSocket);
     vi.advanceTimersByTime(1_000);
+    expect(MockWebSocket.instances).toHaveLength(1);
     expect(session.getState().phase).toBe("stopped");
+
+    session.connect();
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(session.getState().phase).toBe("connecting");
+  });
+
+  it("missing WebSocket inside replacement close still reconnects later", () => {
+    vi.useFakeTimers();
+    const session = createWsSession({
+      url: "ws://example.test",
+      reconnectMs: 100,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
+    });
+    session.emitter.on("close", (event) => {
+      if (event.reason !== "reconnect") return;
+      const saved = globalThis.WebSocket;
+      vi.stubGlobal("WebSocket", undefined);
+      session.connect();
+      vi.stubGlobal("WebSocket", saved);
+    });
+
+    session.connect();
+    latestSocket().open();
+    session.connect();
+    const next = latestSocket();
+    next.open();
+    expect(session.getState().phase).toBe("open");
+
+    next.close();
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "reconnecting",
+      reconnectAttempt: 1,
+    });
+    vi.advanceTimersByTime(100);
+    expect(MockWebSocket.instances).toHaveLength(3);
+    expect(session.getState().phase).toBe("reconnecting");
   });
 
   it("getter that disconnects and throws still reports the failure", () => {
@@ -502,6 +552,120 @@ describe("createWsSession", () => {
       status: "connecting",
       phase: "connecting",
     });
+  });
+
+  it("isPong throw reports failure and still delivers the message", () => {
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 5_000,
+        ping: "ping",
+        isPong: () => {
+          throw new Error("pong blew up");
+        },
+      },
+    });
+    const messages: unknown[] = [];
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("message", (data) => {
+      messages.push(data);
+    });
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    latestSocket().open();
+    latestSocket().onmessage?.({ data: '"pong"' } as MessageEvent);
+
+    expect(messages).toEqual(["pong"]);
+    expect(failures).toEqual([
+      {
+        source: "isPong",
+        cause: expect.objectContaining({ message: "pong blew up" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({ status: "open", phase: "open" });
+  });
+
+  it("isPong that disconnects and throws still reports the failure", () => {
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 5_000,
+        ping: "ping",
+        isPong: () => {
+          session.disconnect();
+          throw new Error("pong blew up");
+        },
+      },
+    });
+    const messages: unknown[] = [];
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("message", (data) => {
+      messages.push(data);
+    });
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    latestSocket().open();
+    latestSocket().onmessage?.({ data: '"pong"' } as MessageEvent);
+
+    expect(messages).toEqual([]);
+    expect(failures).toEqual([
+      {
+        source: "isPong",
+        cause: expect.objectContaining({ message: "pong blew up" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
+  });
+
+  it("isPong that replaces the socket and throws still reports the failure", () => {
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 5_000,
+        ping: "ping",
+        isPong: () => {
+          session.connect();
+          throw new Error("pong blew up");
+        },
+      },
+    });
+    const messages: unknown[] = [];
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("message", (data) => {
+      messages.push(data);
+    });
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    latestSocket().open();
+    latestSocket().onmessage?.({ data: '"pong"' } as MessageEvent);
+
+    expect(messages).toEqual([]);
+    expect(failures).toEqual([
+      {
+        source: "isPong",
+        cause: expect.objectContaining({ message: "pong blew up" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "connecting",
+      phase: "connecting",
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 
   it("parse that replaces the socket does not deliver the old message", () => {
@@ -680,5 +844,192 @@ describe("createWsSession", () => {
       phase: "open",
     });
     expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it("failed nested connect while a socket is open still reports the outer failure", () => {
+    let step = 0;
+    const session = createWsSession({
+      url: () => {
+        step += 1;
+        if (step === 1) return "ws://example.test";
+        if (step === 2) {
+          session.connect();
+          throw new Error("token expired");
+        }
+        throw new Error("inner");
+      },
+    });
+    const failures: string[] = [];
+    session.emitter.on("failure", (detail) => {
+      if (detail.cause instanceof Error) failures.push(detail.cause.message);
+    });
+
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+    session.connect();
+
+    expect(failures).toEqual(["inner", "token expired"]);
+    expect(session.getState()).toMatchObject({
+      status: "open",
+      phase: "open",
+    });
+    expect(socket.readyState).toBe(MockWebSocket.OPEN);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("connect after reconnect is exhausted clears the flag when construction fails", async () => {
+    vi.useFakeTimers();
+    let fail = false;
+    const session = createWsSession({
+      url: () => {
+        if (fail) throw new Error("no token");
+        return "ws://example.test";
+      },
+      reconnectMs: 100,
+      reconnectMax: 1,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
+    });
+
+    session.connect();
+    latestSocket().open();
+    latestSocket().close();
+    fail = true;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+      reconnectAttempt: 1,
+      reconnectExhausted: true,
+    });
+
+    const failures: string[] = [];
+    session.emitter.on("failure", (detail) => {
+      if (detail.cause instanceof Error) failures.push(detail.cause.message);
+    });
+    session.connect();
+
+    expect(failures).toEqual(["no token"]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+      reconnectAttempt: 0,
+      reconnectExhausted: false,
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("getter connect without WebSocket does not let the outer connect replace the socket", () => {
+    let opened = false;
+    const session = createWsSession({
+      url: () => {
+        if (!opened) return "ws://example.test";
+        const saved = globalThis.WebSocket;
+        vi.stubGlobal("WebSocket", undefined);
+        session.connect();
+        vi.stubGlobal("WebSocket", saved);
+        return "ws://replaced";
+      },
+    });
+    const failures: string[] = [];
+    session.emitter.on("failure", (detail) => {
+      if (detail.cause instanceof Error) failures.push(detail.cause.message);
+    });
+
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+    opened = true;
+    session.connect();
+
+    expect(failures).toEqual(["WebSocket is undefined"]);
+    expect(session.getState()).toMatchObject({
+      status: "open",
+      phase: "open",
+    });
+    expect(socket.readyState).toBe(MockWebSocket.OPEN);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("kept socket can send and disconnect after WebSocket is removed", () => {
+    const session = createWsSession({ url: "ws://example.test" });
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+    const sent: unknown[] = [];
+    socket.send = (data?: unknown) => {
+      sent.push(data);
+    };
+    const closes: string[] = [];
+    session.emitter.on("close", (event) => {
+      closes.push(event.reason);
+    });
+
+    vi.stubGlobal("WebSocket", undefined);
+    session.connect();
+
+    expect(session.send("still-open")).toBe(true);
+    expect(sent).toEqual(["still-open"]);
+    session.disconnect();
+    expect(closes).toEqual(["client disconnect"]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  it("server close after WebSocket is removed emits close and leaves the store closed", () => {
+    const session = createWsSession({ url: "ws://example.test" });
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+    const closes: string[] = [];
+    session.emitter.on("close", (event) => {
+      closes.push(event.reason);
+    });
+
+    vi.stubGlobal("WebSocket", undefined);
+    session.connect();
+    socket.close();
+
+    expect(closes).toEqual([""]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+    });
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  it("liveness timeout after WebSocket is removed still closes", () => {
+    vi.useFakeTimers();
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 1_000,
+        ping: "ping",
+        isPong: () => false,
+      },
+    });
+    const closes: string[] = [];
+    session.emitter.on("close", (event) => {
+      closes.push(event.reason);
+    });
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+
+    vi.stubGlobal("WebSocket", undefined);
+    vi.advanceTimersByTime(1_000);
+
+    expect(closes).toEqual(["liveness timeout"]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+    });
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED);
   });
 });

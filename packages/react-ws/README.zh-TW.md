@@ -252,13 +252,13 @@ MessageEvent
 
 ### 事件種類
 
-| `type`      | 回呼                                                                   | 說明                                                                                                                                                                                                                                                                                        |
-| ----------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"message"` | `(data: unknown, event: MessageEvent) => void`                         | `data` 是經過 `parse` 處理後的結果。                                                                                                                                                                                                                                                        |
-| `"open"`    | `(event: Event) => void`                                               | WebSocket 連線建立成功。                                                                                                                                                                                                                                                                    |
-| `"error"`   | `(event: Event) => void`                                               | 原生 WebSocket 的 `"error"`，原樣傳入 `Event`。                                                                                                                                                                                                                                             |
-| `"failure"` | `(detail: { source: "construct" \| "parse"; cause: unknown }) => void` | 不是 socket 事件，也不是 `Event`。空 URL、getter 擲出、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出，或無效的 liveness。無效 liveness 的 `source` 維持 `"construct"`。`cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。沒有 `type` 或 `message`。 |
-| `"close"`   | `(event: CloseEvent) => void`                                          | WebSocket 連線關閉。                                                                                                                                                                                                                                                                        |
+| `type`      | 回呼                                                                               | 說明                                                                                                                                                                                                                                                                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"message"` | `(data: unknown, event: MessageEvent) => void`                                     | `data` 是經過 `parse` 處理後的結果。                                                                                                                                                                                                                                                                                                           |
+| `"open"`    | `(event: Event) => void`                                                           | WebSocket 連線建立成功。                                                                                                                                                                                                                                                                                                                       |
+| `"error"`   | `(event: Event) => void`                                                           | 原生 WebSocket 的 `"error"`，原樣傳入 `Event`。                                                                                                                                                                                                                                                                                                |
+| `"failure"` | `(detail: { source: "construct" \| "parse" \| "isPong"; cause: unknown }) => void` | 不是 socket 事件，也不是 `Event`。空 URL、getter 擲出、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出、`isPong` 擲出，或無效的 liveness。無效 liveness 的 `source` 維持 `"construct"`。`isPong` 的 `source` 是 `"isPong"`。`cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。沒有 `type` 或 `message`。 |
+| `"close"`   | `(event: CloseEvent) => void`                                                      | WebSocket 連線關閉。                                                                                                                                                                                                                                                                                                                           |
 
 ### 訂閱行為
 
@@ -519,7 +519,7 @@ isPong()
 
 `isPong` 會檢查 `parse` 的結果，只有回傳 `true` 才會視為 pong。
 
-即使訊息被判定為 pong，仍然會觸發 `"message"` 事件。
+即使訊息被判定為 pong，仍然會觸發 `"message"` 事件。`isPong` 若同步 `disconnect()` 或 `connect()`，返回時這顆 socket 已不是現役，就不會再觸發 `"message"`。`isPong` 擲出時視為不是 pong，並觸發 `"failure"`，`source` 為 `"isPong"`。這顆 socket 仍是現役時仍會觸發 `"message"`，且不會結束這次等待。已斷線或換線之後的擲出仍會觸發 `"failure"`，不會再觸發 `"message"`。
 
 如果 `ping` 擲出例外，該次 ping 不會送出，但仍會開始等待 pong。
 
@@ -598,12 +598,12 @@ createWsContext({
 
 #### `LivenessOptions`
 
-| 欄位         | 型別                                              | 說明                                                                                    |
-| ------------ | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `intervalMs` | `number`                                          | Ping 的發送間隔（毫秒）。                                                               |
-| `timeoutMs`  | `number`                                          | 等待 Pong 的時間（毫秒）。                                                              |
-| `ping`       | `WebSocket.send` 可接受的資料，或回傳該型別的函式 | 要送出的 Ping。若提供函式，則每次送出前都會呼叫。                                       |
-| `isPong`     | `(data: unknown) => boolean`                      | 判斷 `parse` 後的資料是否為 Pong。若擲出例外，會視為不是 Pong，但仍會觸發 `"message"`。 |
+| 欄位         | 型別                                              | 說明                                                                                                                                                                           |
+| ------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `intervalMs` | `number`                                          | Ping 的發送間隔（毫秒）。                                                                                                                                                      |
+| `timeoutMs`  | `number`                                          | 等待 Pong 的時間（毫秒）。                                                                                                                                                     |
+| `ping`       | `WebSocket.send` 可接受的資料，或回傳該型別的函式 | 要送出的 Ping。若提供函式，則每次送出前都會呼叫。                                                                                                                              |
+| `isPong`     | `(data: unknown) => boolean`                      | 判斷 `parse` 後的資料是否為 Pong。若擲出例外，會視為不是 Pong，但仍會觸發 `"message"`。同步 `disconnect()` 或 `connect()` 後，這顆 socket 已不是現役時不會再觸發 `"message"`。 |
 
 #### 回傳值
 
@@ -618,13 +618,13 @@ createWsContext({
 
 `WsProvider` 管理其子元件樹所使用的原生 `WebSocket`。
 
-| 時機                           | 行為                                                                                                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 掛載且 `autoConnect: true`     | 建立 WebSocket 連線。                                                                                                                                               |
-| 卸載                           | 取消自動重連、重設重連進度、停止 `liveness`。store 設為 `status: "closed"`、`phase: "idle"`。如果存在 WebSocket，則關閉連線，close reason 為 `"provider unmount"`。 |
-| `disconnect()`                 | 執行與卸載相同的清理與 store 重設，不會觸發自動重連。如果存在 WebSocket，則使用 `"client disconnect"` 作為 close reason。                                           |
-| 非主動斷線且 `reconnectMs > 0` | 排程自動重連（退避／上限／抖動）。詳見[重連](#重連)。                                                                                                               |
-| `connect()` 已有／無 WebSocket | 依[重連 → `connect()` 的替換規則](#connect-的替換規則)處理。                                                                                                        |
+| 時機                           | 行為                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 掛載且 `autoConnect: true`     | 建立 WebSocket 連線。                                                                                                                                                                                                                                                                                                                               |
+| 卸載                           | 取消自動重連、重設重連進度、停止 `liveness`。尚未連線且沒有重連排程時，store 維持 `status: "idle"`、`phase: "idle"`。否則設為 `status: "closed"`、`phase: "idle"`。如果存在 WebSocket，則關閉連線，close reason 為 `"provider unmount"`。這次 `"close"` 裡呼叫 `connect()`，以及卸載後保留的 `connect()`，都不會再開線。Provider 再次掛載後才恢復。 |
+| `disconnect()`                 | 不會觸發自動重連。store 設為 `status: "closed"`、`phase: "idle"`。如果存在 WebSocket，則使用 `"client disconnect"` 作為 close reason。                                                                                                                                                                                                              |
+| 非主動斷線且 `reconnectMs > 0` | 排程自動重連（退避／上限／抖動）。詳見[重連](#重連)。                                                                                                                                                                                                                                                                                               |
+| `connect()` 已有／無 WebSocket | 依[重連 → `connect()` 的替換規則](#connect-的替換規則)處理。                                                                                                                                                                                                                                                                                        |
 
 ### `useWsActions`
 
@@ -698,7 +698,7 @@ selector 的回傳值會使用 `Object.is` 與前一次結果比較。
 - 沒有執行期 npm 依賴。
 - 需要 `globalThis.WebSocket`。
 - 如果執行環境沒有 `WebSocket`，`connect()` 不會建立連線，並觸發 `"failure"`（`source` 為 `"construct"`，`cause` 是 `Error`，其 `message` 為 `"WebSocket is undefined"`）。
-- 沒有現役 socket 時，包含第一次 `connect()` 與已觸發的自動重連計時器，store 會變成 `status: "closed"`、`phase: "stopped"`。已有 socket 則維持不變。
+- 沒有現役 socket 時，`connect()` 不會排下一次，store 變成 `status: "closed"`、`phase: "stopped"`。已有 socket 則維持不變。
 - 套件入口包含 `"use client"`，適用於 Next.js App Router；一般 SPA 則會忽略此設定。
 
 ## 匯出型別

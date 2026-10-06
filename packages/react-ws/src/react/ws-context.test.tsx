@@ -1,5 +1,5 @@
 import { act, cleanup, render } from "@testing-library/react";
-import { createElement } from "react";
+import { StrictMode, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WsEvents } from "../core/session";
 import { createWsContext } from "./create-ws-context";
@@ -1172,6 +1172,7 @@ describe("createWsContext", () => {
     vi.useFakeTimers();
     const messages: unknown[] = [];
     const errors: WsErrorEvent[] = [];
+    const failures: WsFailure[] = [];
     const { WsProvider, useWsState, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
@@ -1194,6 +1195,9 @@ describe("createWsContext", () => {
       useWsEvents("error", (event) => {
         errors.push(event);
       });
+      useWsEvents("failure", (detail) => {
+        failures.push(detail);
+      });
       return createElement("div", { "data-status": status }, status);
     }
 
@@ -1211,6 +1215,12 @@ describe("createWsContext", () => {
     });
     expect(messages).toEqual([{ hello: 1 }]);
     expect(errors).toHaveLength(0);
+    expect(failures).toEqual([
+      {
+        source: "isPong",
+        cause: expect.objectContaining({ message: "isPong" }),
+      },
+    ]);
     expect(status()).toBe("open");
 
     await act(async () => {
@@ -2086,6 +2096,84 @@ describe("createWsContext", () => {
     });
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(phase()).toBe("idle");
+  });
+
+  it("strict mode with autoConnect false stays idle", () => {
+    const { WsProvider, useWsState } = createWsContext({
+      url: "ws://test",
+      autoConnect: false,
+    });
+
+    function Probe() {
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
+    }
+
+    const { container } = render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(WsProvider, null, createElement(Probe)),
+      ),
+    );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    expect(status()).toBe("idle");
+    expect(phase()).toBe("idle");
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("connect inside unmount close does not open another socket", async () => {
+    const { WsProvider, useWsActions, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 0,
+    });
+    let connect!: () => void;
+    function Probe() {
+      connect = useWsActions().connect;
+      useWsEvents("close", (event) => {
+        if (event.reason !== "client disconnect") connect();
+      });
+      return null;
+    }
+
+    const view = render(createElement(WsProvider, null, createElement(Probe)));
+    await act(async () => {
+      latestWs().open();
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    view.unmount();
+    connect();
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0]!.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  it("strict mode with autoConnect still connects after the fake unmount", () => {
+    const { WsProvider } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+      reconnectMs: 0,
+    });
+
+    render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(WsProvider, null, createElement("div")),
+      ),
+    );
+
+    expect(latestWs().readyState).toBe(MockWebSocket.CONNECTING);
   });
 
   it("unmount while waiting does not reconnect after the timer", async () => {

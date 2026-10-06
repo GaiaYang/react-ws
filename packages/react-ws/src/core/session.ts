@@ -10,6 +10,8 @@ import {
 } from "./reconnect";
 import {
   MAX_TIMEOUT_MS,
+  READY_CONNECTING,
+  READY_OPEN,
   clientCloseEvent,
   detachAndClose,
   stringifyJson,
@@ -73,7 +75,7 @@ export interface WsEvents {
   /**
    * 收到訊息
    *
-   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"failure"`。`connect()` 已換線之後的擲出，不會算到新 socket 的 `"failure"`。
+   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 或 `isPong` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"failure"`。`parse` 在 `connect()` 已換線之後的擲出，不會算到新 socket 的 `"failure"`。`isPong` 擲出一律觸發 `"failure"`，`source` 為 `"isPong"`。
    * @param event 這次的 `MessageEvent`。
    */
   message: (parsed: unknown, event: MessageEvent) => void;
@@ -90,13 +92,16 @@ export interface WsEvents {
   /**
    * 不是 socket 事件的失敗。
    *
-   * 空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出，或無效的 liveness。
+   * 空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗、沒有 `WebSocket`、`parse` 擲出、`isPong` 擲出，或無效的 liveness。
    *
-   * `source` 為 `"construct"` 或 `"parse"`。無效 liveness 的 `source` 是 `"construct"`。
+   * `source` 為 `"construct"`、`"parse"` 或 `"isPong"`。無效 liveness 的 `source` 是 `"construct"`。
    *
    * `cause` 是擲出的值。空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。
    */
-  failure: (detail: { source: "construct" | "parse"; cause: unknown }) => void;
+  failure: (detail: {
+    source: "construct" | "parse" | "isPong";
+    cause: unknown;
+  }) => void;
 }
 
 export type WsEventsEmitter = Emitter<WsEvents>;
@@ -137,6 +142,8 @@ export interface WsActions {
    * 若仍在等待自動重連計時器，會取消目前的等待，並以同一個 `reconnectAttempt` 重新排程。
    *
    * 提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續，且不計入 `reconnectMax`。
+   *
+   * 沒有 `WebSocket` 時不沿用上面的排程：沒有現役 socket 就變成 `phase: "stopped"`，不再排下一次。已有 socket 則維持不變。
    */
   connect: () => void;
   /**
@@ -154,6 +161,8 @@ export interface WsSession extends WsActions {
   emitter: WsEventsEmitter;
   /** `disconnect` 與 Provider 卸載共用，避免兩處漏清 timer */
   teardown: (reason: string) => void;
+  /** Provider 的 effect 再次掛上時呼叫，卸載期間的 `connect()` 才會恢復 */
+  attach: () => void;
 }
 
 function defaultParse(data: MessageEvent["data"]): unknown {
@@ -171,15 +180,6 @@ function resolveConnectTimeoutMs(value: number | undefined): number {
     return 0;
   }
   return Math.min(value, MAX_TIMEOUT_MS);
-}
-
-function connectTimeoutEvent(): CloseEvent {
-  return {
-    type: "close",
-    code: 1006,
-    reason: "connect timeout",
-    wasClean: false,
-  } as CloseEvent;
 }
 
 /**
@@ -208,16 +208,13 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       detachAndClose(socket);
       return;
     }
-    settleClose(socket, {
-      type: "close",
-      code: 1006,
-      reason: "liveness timeout",
-      wasClean: false,
-    } as CloseEvent);
+    settleClose(socket, clientCloseEvent("liveness timeout", 1006, false));
   });
 
   let wsCurrent: WebSocket | null = null;
   let connectGeneration = 0;
+  /** 只有 Provider 卸載會關掉。`disconnect()` 之後仍可再 `connect()` */
+  let providerAttached = true;
   let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearConnectTimer(): void {
@@ -229,21 +226,29 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   function armConnectTimer(ws: WebSocket): void {
     clearConnectTimer();
-    if (connectTimeoutMs <= 0 || ws.readyState !== WebSocket.CONNECTING) return;
+    if (connectTimeoutMs <= 0 || ws.readyState !== READY_CONNECTING) return;
     connectTimer = setTimeout(() => {
       connectTimer = null;
-      settleClose(ws, connectTimeoutEvent());
+      settleClose(ws, clientCloseEvent("connect timeout", 1006, false));
     }, connectTimeoutMs);
   }
 
+  function attach(): void {
+    providerAttached = true;
+  }
+
   function teardown(reason: string): void {
+    if (reason === "provider unmount") providerAttached = false;
     connectGeneration += 1;
     clearConnectTimer();
     reconnect.cancel();
     liveness.stop();
-    store.setState({ phase: "idle", status: "closed" });
     const ws = wsCurrent;
     wsCurrent = null;
+    // 還沒連過就寫成 closed，StrictMode 的假卸載會把仍掛著的 session 看成主動斷線
+    if (ws || store.getState().phase !== "idle") {
+      store.setState({ phase: "idle", status: "closed" });
+    }
     if (ws) {
       detachAndClose(ws);
       emitter.emit("close", clientCloseEvent(reason));
@@ -252,10 +257,23 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   function disconnect(): void {
     teardown("client disconnect");
+    if (store.getState().status === "idle") {
+      store.setState({ phase: "idle", status: "closed" });
+    }
   }
 
   function connect(): void {
+    if (!providerAttached) return;
+    const socketAtStart = wsCurrent;
+    // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零
+    reconnect.prepareManualConnect();
+    // 呼叫 connect() 就清掉用盡旗標。這次重連若再次用盡，排程會再設回 true。
+    if (store.getState().reconnectExhausted) {
+      store.setState({ reconnectExhausted: false });
+    }
     if (typeof globalThis.WebSocket === "undefined") {
+      // 外層 connect 還在 getter 裡。不推進的話，外層會再把留下的舊線換掉。
+      connectGeneration += 1;
       const fired = reconnect.clearTimerTrigger();
       const detail = {
         source: "construct" as const,
@@ -266,7 +284,12 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         emitter.emit("failure", detail);
         return;
       }
-      if (!fired) reconnect.cancel();
+      // 沒有 WebSocket 就不要再排。只清掉還在等的那次。
+      // 換線 close 回呼裡呼叫時，onConnectBegin 已把 nextReconnectAt 歸零，不能 cancel()，
+      // 否則外層留下的 socket 之後不會再重連。
+      if (!fired && store.getState().nextReconnectAt > 0) {
+        reconnect.cancel();
+      }
       store.setState({ status: "closed", phase: "stopped" });
       emitter.emit("failure", detail);
       return;
@@ -280,9 +303,12 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     try {
       resolvedUrl = resolveMaybeGetter(url);
       if (resolvedUrl === "") throw new Error("empty url");
+      // getter 裡的 connect 已接管。這裡再 new WebSocket 會多開一條立刻關掉的線。
+      if (generation !== connectGeneration) return;
       if (protocols !== undefined) {
         resolvedProtocols = resolveMaybeGetter(protocols);
       }
+      if (generation !== connectGeneration) return;
       ws =
         resolvedProtocols == null
           ? new WebSocket(resolvedUrl)
@@ -290,9 +316,9 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     } catch (cause) {
       // getter 裡的 disconnect／connect 已經收斂，外層不可再改 store。
       // 新 socket 已接手時，這次失敗不能算到它頭上。
-      // 斷線後沒有接手者，失敗仍要送出。
+      // 舊線還在，或斷線後沒有接手者，失敗仍要送出。
       if (generation !== connectGeneration) {
-        if (wsCurrent == null) {
+        if (wsCurrent == null || wsCurrent === socketAtStart) {
           emitter.emit("failure", { source: "construct", cause });
         }
         return;
@@ -387,9 +413,14 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         emitter.emit("failure", { source: "parse", cause });
         return;
       }
-      // parse／isPong 可能已斷線或換線，舊訊息不能再送
+      // parse 可能已斷線或換線，舊訊息不能再送
       if (wsCurrent !== ws) return;
-      liveness.onMessage(data);
+      try {
+        liveness.onMessage(data);
+      } catch (cause) {
+        // isPong 不是 socket 事件，換線之後也要讓開發者看到
+        emitter.emit("failure", { source: "isPong", cause });
+      }
       if (wsCurrent !== ws) return;
       emitter.emit("message", data, event);
     };
@@ -427,7 +458,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
 
   function send(data: Parameters<WebSocket["send"]>[0]): boolean {
     const ws = wsCurrent;
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === READY_OPEN) {
       ws.send(data);
       return true;
     }
@@ -448,5 +479,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     disconnect,
     getState: store.getState,
     teardown,
+    attach,
   };
 }

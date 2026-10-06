@@ -1,4 +1,5 @@
 import { resolveMaybeGetter } from "../maybe-getter";
+import { READY_OPEN } from "../socket";
 import {
   createLivenessController,
   type LivenessController,
@@ -33,14 +34,14 @@ export function createLiveness(
           onTimeout(socket);
           return;
         }
-        if (socket.readyState !== WebSocket.OPEN) return;
+        if (socket.readyState !== READY_OPEN) return;
         socket.close();
       });
       controller.start(() => {
-        if (socket.readyState !== WebSocket.OPEN) return;
+        if (socket.readyState !== READY_OPEN) return;
         const data = resolveMaybeGetter(options.ping);
         // ping 可能同步斷線或換線，不能再送到舊 socket
-        if (socket.readyState !== WebSocket.OPEN) return;
+        if (socket.readyState !== READY_OPEN) return;
         socket.send(data);
       });
     },
