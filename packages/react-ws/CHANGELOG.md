@@ -7,20 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-07
+
 ### Added
 
 - `"failure"` `source` includes `"isPong"` when `isPong` throws. The message still fires while that socket is current, and the pong wait is not cleared. A throw after `disconnect()` or a socket swap still emits `"failure"` and does not emit `"message"`
 
 ### Breaking
 
-- `"error"` is only the native `Event` from `ws.onerror`. Empty URL, a getter throw, `new WebSocket()` failing, a missing `WebSocket`, a thrown `parse`, and invalid liveness emit `"failure"` as `{ source: "construct" | "parse", cause }`. Invalid liveness stays `source: "construct"`. The detail has no `type` or `message`. Those failures are not socket events, so they no longer share `"error"` with `Event`. `connect()` still does not throw, and nothing is written into `WsState`. An existing socket stays up. A thrown `parse` still skips `"message"` and does not close the socket
+- `"error"` is only the native `Event` from `ws.onerror`. Empty URL, a getter throw, `new WebSocket()` failing, a missing `WebSocket`, a thrown `parse`, a thrown `isPong`, and invalid liveness emit `"failure"` as `{ source: "construct" | "parse" | "isPong", cause }`. Invalid liveness stays `source: "construct"`. The detail has no `type` or `message`. Those failures are not socket events, so they no longer share `"error"` with `Event`. `connect()` still does not throw, and nothing is written into `WsState`. An existing socket stays up. A thrown `parse` still skips `"message"` and does not close the socket
 
 ### Fixed
 
-- A manual `connect()` that fails to construct outside an in-flight reconnect zeros `reconnectAttempt`
+- A manual `connect()` that fails to construct outside an in-flight reconnect zeros `reconnectAttempt`. A failure while the handshake that replaced a waiting timer is still connecting keeps that attempt, and the later close schedules it again
 - `connect()` during the provider-unmount `"close"`, or a `connect()` kept after unmount, does not open another socket. React Strict Mode can connect again when the effect runs a second time
 - A `url` or `protocols` getter that calls `disconnect()` and then throws still emits `"failure"`. A `url` getter that then returns `""` does too. A `protocols` getter that returns `""` is passed through; if it calls `disconnect()` first, the outer `connect()` stops and does not emit. The store stays `closed` / `idle`. A getter that calls `connect()` and then throws does not emit that failure on the new socket
 - Invalid liveness still emits `"failure"` after `"open"` when that handler calls `disconnect()`. The store stays `closed` / `idle`, and liveness does not start. A handler that calls `connect()` leaves the failure for the new socket's `"open"`
+- The pong wait is armed before the ping is sent, so a pong that arrives inside `ping` clears it. A thrown ping still leaves the wait armed
+- `connect()` without `globalThis.WebSocket` does not schedule another wait. With no current socket the store is `closed` / `stopped`. A current socket stays up and can still send and close
 
 ## [0.9.0] - 2026-10-02
 
