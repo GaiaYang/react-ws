@@ -204,6 +204,32 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     resolveReconnectOptions(options),
     store.setState,
   );
+
+  let wsCurrent: WebSocket | null = null;
+  let connectGeneration = 0;
+  /** 只有 Provider 卸載會關掉。`disconnect()` 之後仍可再 `connect()` */
+  let providerAttached = true;
+  let connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function settleClose(ws: WebSocket, event: CloseEvent): void {
+    if (wsCurrent !== ws) return;
+    clearConnectTimer();
+    wsCurrent = null;
+    liveness.stop();
+    detachAndClose(ws);
+    const scheduled = reconnect.scheduleAfterClose();
+    // teardown 已是 idle；勿蓋成 stopped，否則刻意斷線像放棄重連
+    store.setState((state) => ({
+      status: "closed",
+      phase: scheduled
+        ? "reconnecting"
+        : state.phase === "idle"
+          ? "idle"
+          : "stopped",
+    }));
+    emitter.emit("close", event);
+  }
+
   const liveness = resolveLiveness(livenessOptions, (socket) => {
     if (wsCurrent !== socket) {
       detachAndClose(socket);
@@ -211,12 +237,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     }
     settleClose(socket, clientCloseEvent("liveness timeout", 1006, false));
   });
-
-  let wsCurrent: WebSocket | null = null;
-  let connectGeneration = 0;
-  /** 只有 Provider 卸載會關掉。`disconnect()` 之後仍可再 `connect()` */
-  let providerAttached = true;
-  let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearConnectTimer(): void {
     if (connectTimer != null) {
@@ -268,10 +288,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     const socketAtStart = wsCurrent;
     // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零
     reconnect.prepareManualConnect();
-    // 呼叫 connect() 就清掉用盡旗標。這次重連若再次用盡，排程會再設回 true。
-    if (store.getState().reconnectExhausted) {
-      store.setState({ reconnectExhausted: false });
-    }
     if (typeof globalThis.WebSocket === "undefined") {
       // 外層 connect 還在 getter 裡。不推進的話，外層會再把留下的舊線換掉。
       connectGeneration += 1;
@@ -434,25 +450,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     ws.onclose = (event) => {
       settleClose(ws, event);
     };
-  }
-
-  function settleClose(ws: WebSocket, event: CloseEvent): void {
-    if (wsCurrent !== ws) return;
-    clearConnectTimer();
-    wsCurrent = null;
-    liveness.stop();
-    detachAndClose(ws);
-    const scheduled = reconnect.scheduleAfterClose();
-    // teardown 已是 idle；勿蓋成 stopped，否則刻意斷線像放棄重連
-    store.setState((state) => ({
-      status: "closed",
-      phase: scheduled
-        ? "reconnecting"
-        : state.phase === "idle"
-          ? "idle"
-          : "stopped",
-    }));
-    emitter.emit("close", event);
   }
 
   reconnect.bindOnReconnect(connect);

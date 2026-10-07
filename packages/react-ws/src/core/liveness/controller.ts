@@ -43,8 +43,6 @@ export function createLivenessController(
     if (stopped) return;
     // 已在等 pong 勿重設，否則 timeoutMs > intervalMs 時逾時永遠不到
     if (timeoutId != null) return;
-    // 0、負數、非有限數不是「立刻判死」，也不是靜默關掉後還繼續 ping
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return;
     timeoutId = setTimeout(
       () => {
         timeoutId = null;
