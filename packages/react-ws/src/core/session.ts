@@ -98,9 +98,10 @@ export interface WsEvents {
    * - `"parse"`：`parse` 擲出。
    * - `"isPong"`：`isPong` 擲出。
    * - `"liveness"`：`intervalMs`／`timeoutMs` 無效。`cause` 是 `Error`，其 `message` 為 `"invalid liveness"`。
+   * - `"ping"`：`ping` 擲出，或這次 ping 的 `WebSocket.send` 擲出。該次不會送出，等待仍會開始。同步 `disconnect()` 或 `connect()` 之後的擲出仍會觸發。
    */
   failure: (detail: {
-    source: "construct" | "parse" | "isPong" | "liveness";
+    source: "construct" | "parse" | "isPong" | "liveness" | "ping";
     cause: unknown;
   }) => void;
 }
@@ -230,13 +231,20 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     emitter.emit("close", event);
   }
 
-  const liveness = resolveLiveness(livenessOptions, (socket) => {
-    if (wsCurrent !== socket) {
-      detachAndClose(socket);
-      return;
-    }
-    settleClose(socket, clientCloseEvent("liveness timeout", 1006, false));
-  });
+  const liveness = resolveLiveness(
+    livenessOptions,
+    (socket) => {
+      if (wsCurrent !== socket) {
+        detachAndClose(socket);
+        return;
+      }
+      settleClose(socket, clientCloseEvent("liveness timeout", 1006, false));
+    },
+    (cause) => {
+      // ping 不是 socket 事件。斷線或換線之後仍要讓開發者看到
+      emitter.emit("failure", { source: "ping", cause });
+    },
+  );
 
   function clearConnectTimer(): void {
     if (connectTimer != null) {

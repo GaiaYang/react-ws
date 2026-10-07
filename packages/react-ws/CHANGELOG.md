@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `"failure"` `source` includes `"ping"` when `ping` throws, or when `WebSocket.send` throws for that ping. That ping is not sent, and the pong wait still starts. A throw after `disconnect()` or `connect()` still emits `"failure"`
+
 ### Breaking
 
 - Invalid liveness emits `"failure"` with `source: "liveness"` instead of `"construct"`. `cause` is still an `Error` whose message is `"invalid liveness"`

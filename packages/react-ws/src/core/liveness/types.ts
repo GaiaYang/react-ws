@@ -18,6 +18,10 @@ export interface LivenessOptions {
    * 要送出的 Ping
    *
    * 若為函式，每次送出前都會呼叫。
+   *
+   * 函式擲出，或這次 `WebSocket.send` 擲出時，該次 ping 不會送出，並觸發 `"failure"`，`source` 為 `"ping"`。等待 pong 仍會開始。
+   *
+   * 同步 `disconnect()` 或 `connect()` 之後的擲出仍會觸發 `"failure"`。
    */
   ping: MaybeGetter<Parameters<WebSocket["send"]>[0]>;
   /**

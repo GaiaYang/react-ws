@@ -21,6 +21,7 @@ const DISABLED_LIVENESS: Liveness = {
 export function createLiveness(
   options: LivenessOptions,
   onTimeout?: (socket: WebSocket) => void,
+  onPingFailure?: (cause: unknown) => void,
 ): Liveness {
   let controller: LivenessController | null = null;
 
@@ -39,10 +40,15 @@ export function createLiveness(
       });
       controller.start(() => {
         if (socket.readyState !== READY_OPEN) return;
-        const data = resolveMaybeGetter(options.ping);
-        // ping 可能同步斷線或換線，不能再送到舊 socket
-        if (socket.readyState !== READY_OPEN) return;
-        socket.send(data);
+        try {
+          const data = resolveMaybeGetter(options.ping);
+          // ping 可能同步斷線或換線，不能再送到舊 socket
+          if (socket.readyState !== READY_OPEN) return;
+          socket.send(data);
+        } catch (cause) {
+          // 等待已由 controller 掛上。這裡吞掉，避免 tick 變成未處理例外
+          onPingFailure?.(cause);
+        }
       });
     },
 
@@ -60,6 +66,9 @@ export function createLiveness(
 export function resolveLiveness(
   options: LivenessOptions | undefined,
   onTimeout?: (socket: WebSocket) => void,
+  onPingFailure?: (cause: unknown) => void,
 ): Liveness {
-  return options ? createLiveness(options, onTimeout) : DISABLED_LIVENESS;
+  return options
+    ? createLiveness(options, onTimeout, onPingFailure)
+    : DISABLED_LIVENESS;
 }

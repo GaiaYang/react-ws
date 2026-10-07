@@ -668,6 +668,148 @@ describe("createWsSession", () => {
     expect(MockWebSocket.instances).toHaveLength(2);
   });
 
+  it("ping throw reports failure and still arms the wait", () => {
+    vi.useFakeTimers();
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 500,
+        ping: () => {
+          throw new Error("ping");
+        },
+        isPong: () => false,
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    const closes: string[] = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+    session.emitter.on("close", (event) => {
+      closes.push(event.reason);
+    });
+
+    session.connect();
+    latestSocket().open();
+
+    expect(failures).toEqual([
+      {
+        source: "ping",
+        cause: expect.objectContaining({ message: "ping" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({ status: "open", phase: "open" });
+    vi.advanceTimersByTime(499);
+    expect(closes).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(closes).toEqual(["liveness timeout"]);
+  });
+
+  it("ping send throw reports failure and still arms the wait", () => {
+    vi.useFakeTimers();
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 500,
+        ping: "ping",
+        isPong: () => false,
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    const socket = latestSocket();
+    socket.send = () => {
+      throw new Error("send failed");
+    };
+    socket.open();
+
+    expect(failures).toEqual([
+      {
+        source: "ping",
+        cause: expect.objectContaining({ message: "send failed" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({ status: "open", phase: "open" });
+    vi.advanceTimersByTime(500);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+    });
+  });
+
+  it("ping that disconnects and throws still reports the failure", () => {
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 5_000,
+        ping: () => {
+          session.disconnect();
+          throw new Error("ping");
+        },
+        isPong: () => false,
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    latestSocket().open();
+
+    expect(failures).toEqual([
+      {
+        source: "ping",
+        cause: expect.objectContaining({ message: "ping" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "idle",
+    });
+  });
+
+  it("ping that replaces the socket and throws still reports the failure", () => {
+    const session = createWsSession({
+      url: "ws://example.test",
+      liveness: {
+        intervalMs: 1_000,
+        timeoutMs: 5_000,
+        ping: () => {
+          session.connect();
+          throw new Error("ping");
+        },
+        isPong: () => false,
+      },
+    });
+    const failures: Array<{ source: string; cause: unknown }> = [];
+    session.emitter.on("failure", (detail) => {
+      failures.push(detail);
+    });
+
+    session.connect();
+    latestSocket().open();
+
+    expect(failures).toEqual([
+      {
+        source: "ping",
+        cause: expect.objectContaining({ message: "ping" }),
+      },
+    ]);
+    expect(session.getState()).toMatchObject({
+      status: "connecting",
+      phase: "connecting",
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
   it("parse that replaces the socket does not deliver the old message", () => {
     const session = createWsSession({
       url: "ws://example.test",
