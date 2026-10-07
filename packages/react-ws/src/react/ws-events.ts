@@ -19,7 +19,9 @@ export function createUseWsEvents(EventsCtx: Context<WsEventsEmitter | null>) {
   ): void {
     const emitter = useContext(EventsCtx);
     if (!emitter) {
-      throw new Error("useWsEvents 必須在對應的 WsProvider 內");
+      throw new Error(
+        "useWsEvents must be used within the corresponding WsProvider",
+      );
     }
 
     const handlerRef = useRef(handler);

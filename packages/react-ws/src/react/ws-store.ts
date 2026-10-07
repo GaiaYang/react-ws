@@ -12,7 +12,9 @@ export function createUseWsState(StoreCtx: Context<WsStoreApi | null>) {
   function useWsState<T>(selector?: (state: WsState) => T): T {
     const store = useContext(StoreCtx);
     if (!store) {
-      throw new Error("useWsState 必須在對應的 WsProvider 內");
+      throw new Error(
+        "useWsState must be used within the corresponding WsProvider",
+      );
     }
     const select = selector ?? ((state: WsState) => state as T);
     return useStore(store, select);
