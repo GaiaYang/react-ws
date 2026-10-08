@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useLayoutEffect,
   useRef,
   type Context,
@@ -25,12 +26,12 @@ export function createUseWsEvents(EventsCtx: Context<WsEventsEmitter | null>) {
 
     const handlerRef = useRef(handler);
 
-    // 訂閱與 handler 都在繪製前。被動 effect 才訂閱的話，這個 commit 的訊息沒人收。
+    // 繪製前換上最新 handler。被動 effect 晚於繪製，中間的訊息會打到舊的。
     useLayoutEffect(() => {
       handlerRef.current = handler;
     }, [handler]);
 
-    useLayoutEffect(() => {
+    useEffect(() => {
       return emitter.on(type, ((...args: never[]) => {
         (handlerRef.current as (...a: never[]) => void)(...args);
       }) as WsEvents[E]);

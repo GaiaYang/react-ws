@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useState, type PropsWithChildren }
 import {
   createWsSession,
   type WsActions,
-  type WsSession,
   type WsSessionOptions,
 } from "../core/session";
 import { createUseWsEvents, createWsEventsContext } from "./ws-events";
@@ -19,15 +18,6 @@ export interface CreateWsContextOptions extends WsSessionOptions {
   autoConnect?: boolean;
 }
 
-// 父層 layout 晚於子元件。這個節點排在 children 前面，layout 才會先跑。
-function SessionMount({ attach, detach }: Pick<WsSession, "attach" | "detach">) {
-  useLayoutEffect(() => {
-    attach();
-    return () => detach();
-  }, [attach, detach]);
-  return null;
-}
-
 export function createWsContext(options: CreateWsContextOptions) {
   const { autoConnect = true, ...sessionOptions } = options;
 
@@ -40,6 +30,11 @@ export function createWsContext(options: CreateWsContextOptions) {
 
   function WsProvider({ children }: PropsWithChildren) {
     const [session] = useState(() => createWsSession(sessionOptions));
+
+    // StrictMode 重掛時，layout 早於子元件的 passive effect，connect() 才不會在 attach 之前被丟掉。
+    useLayoutEffect(() => {
+      session.attach();
+    }, [session]);
 
     useEffect(() => {
       if (autoConnect) session.connect();
@@ -61,7 +56,6 @@ export function createWsContext(options: CreateWsContextOptions) {
       <ActionsCtx.Provider value={actions}>
         <StoreCtx.Provider value={session.store}>
           <EventsCtx.Provider value={session.emitter}>
-            <SessionMount attach={session.attach} detach={session.detach} />
             {children}
           </EventsCtx.Provider>
         </StoreCtx.Provider>
