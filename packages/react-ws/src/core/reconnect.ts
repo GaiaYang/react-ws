@@ -118,7 +118,10 @@ export function reconnectDelay(
   const jitter = Math.min(Math.max(jitterRatio, 0), 1);
   const jittered = capped * (1 - Math.random() * jitter);
   const rounded = Math.round(jittered);
-  const clamped = Math.min(Math.max(rounded, 0), MAX_TIMEOUT_MS);
+  // 先四捨五入再夾回上限，否則 100.6 會變成 101
+  const withinCap =
+    reconnectDelayMaxMs > 0 ? Math.min(rounded, reconnectDelayMaxMs) : rounded;
+  const clamped = Math.min(Math.max(withinCap, 0), MAX_TIMEOUT_MS);
   // Infinity 已被夾住；NaN 會穿過 Math.min / Math.max
   return Number.isFinite(clamped) ? clamped : MAX_TIMEOUT_MS;
 }
@@ -159,9 +162,9 @@ export interface Reconnect {
    */
   onConnectBegin: () => boolean;
   /**
-   * 沒有進行中的自動重連時，手動 `connect()` 立刻把週期歸零。
+   * 沒有等待中的自動重連計時器時，手動 `connect()` 立刻把週期歸零。
    *
-   * 等待中、計時器已觸發，或這次手動連線已取消等待但握手尚未 `open` 時不動。
+   * 計時器還在等，或這次呼叫來自已觸發的計時器時不動。握手尚未 `open` 也一樣歸零。
    */
   prepareManualConnect: () => void;
   onOpen: () => void;
@@ -280,7 +283,9 @@ export function createReconnect(
 
   return {
     prepareManualConnect() {
-      if (fromTimer || reusePendingAttempt) return;
+      // 計時器還在，或這次就是已觸發的那輪。沒有計時器時，含握手中，一律歸零。
+      if (fromTimer) return;
+      reusePendingAttempt = false;
       attempt = 0;
       apply({
         nextReconnectAt: 0,

@@ -1,5 +1,5 @@
 import { act, cleanup, render } from "@testing-library/react";
-import { StrictMode, createElement } from "react";
+import { StrictMode, createElement, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WsEvents } from "../core/session";
 import { createWsContext } from "./create-ws-context";
@@ -515,6 +515,48 @@ describe("createWsContext", () => {
       api.connect();
       latestWs().open();
     });
+    expect(latestWs().sent).toEqual([]);
+  });
+
+  it("send while the socket is closing does not leave status open", async () => {
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+    });
+
+    let api!: ReturnType<typeof useWsActions>;
+    function Probe() {
+      api = useWsActions();
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
+    }
+
+    const { container } = render(
+      createElement(WsProvider, null, createElement(Probe)),
+    );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {
+      latestWs().open();
+    });
+    latestWs().readyState = MockWebSocket.CLOSING;
+
+    await act(async () => {
+      expect(api.send("x")).toBe(false);
+    });
+    expect(api.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+    });
+    expect(status()).toBe("closed");
+    expect(phase()).toBe("stopped");
     expect(latestWs().sent).toEqual([]);
   });
 
@@ -2128,6 +2170,48 @@ describe("createWsContext", () => {
     expect(status()).toBe("idle");
     expect(phase()).toBe("idle");
     expect(MockWebSocket.instances).toHaveLength(0);
+  });
+
+  it("strict mode child connect still opens a socket", async () => {
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
+      url: "ws://test",
+      autoConnect: false,
+    });
+
+    function Probe() {
+      const { connect } = useWsActions();
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      useEffect(() => {
+        connect();
+      }, [connect]);
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
+    }
+
+    const { container } = render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(WsProvider, null, createElement(Probe)),
+      ),
+    );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {});
+
+    expect(status()).toBe("connecting");
+    expect(phase()).toBe("connecting");
+    expect(
+      MockWebSocket.instances.filter(
+        (ws) => ws.readyState === MockWebSocket.CONNECTING,
+      ),
+    ).toHaveLength(1);
   });
 
   it("connect inside unmount close does not open another socket", async () => {

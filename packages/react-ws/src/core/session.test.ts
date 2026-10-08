@@ -305,6 +305,34 @@ describe("createWsSession", () => {
     expect(latestSocket().readyState).toBe(MockWebSocket.OPEN);
   });
 
+  it("connect without WebSocket keeps the reconnect attempt of an open socket", () => {
+    vi.useFakeTimers();
+    const session = createWsSession({
+      url: "ws://example.test",
+      reconnectMs: 100,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 5_000,
+    });
+    session.connect();
+    latestSocket().open();
+    latestSocket().close();
+    vi.advanceTimersByTime(100);
+    latestSocket().open();
+    expect(session.getState().reconnectAttempt).toBe(1);
+
+    vi.stubGlobal("WebSocket", undefined);
+    session.connect();
+
+    expect(session.getState()).toMatchObject({
+      status: "open",
+      phase: "open",
+      reconnectAttempt: 1,
+      reconnectExhausted: false,
+    });
+    expect(latestSocket().readyState).toBe(MockWebSocket.OPEN);
+  });
+
   it("connect without WebSocket while waiting does not schedule another attempt", () => {
     vi.useFakeTimers();
     const session = createWsSession({
@@ -871,7 +899,7 @@ describe("createWsSession", () => {
     expect(session.getState().nextReconnectAt).toBeGreaterThan(Date.now());
   });
 
-  it("construct failure during a manual handshake keeps the reused attempt", () => {
+  it("construct failure of a later manual connect resets the cycle", () => {
     vi.useFakeTimers();
     let fail = false;
     const session = createWsSession({
@@ -897,7 +925,7 @@ describe("createWsSession", () => {
 
     expect(session.getState()).toMatchObject({
       phase: "connecting",
-      reconnectAttempt: 1,
+      reconnectAttempt: 0,
       reconnectExhausted: false,
     });
     expect(handshake.readyState).toBe(MockWebSocket.CONNECTING);

@@ -294,8 +294,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
   function connect(): void {
     if (!providerAttached) return;
     const socketAtStart = wsCurrent;
-    // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零
-    reconnect.prepareManualConnect();
     if (typeof globalThis.WebSocket === "undefined") {
       // 外層 connect 還在 getter 裡。不推進的話，外層會再把留下的舊線換掉。
       connectGeneration += 1;
@@ -319,6 +317,10 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       emitter.emit("failure", detail);
       return;
     }
+
+    // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零。
+    // 沒有 WebSocket 時不能先歸零，否則現役 socket 的次數被清掉。
+    reconnect.prepareManualConnect();
 
     const generation = ++connectGeneration;
     let resolvedUrl: string;
@@ -467,6 +469,10 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     if (ws && ws.readyState === READY_OPEN) {
       ws.send(data);
       return true;
+    }
+    // onclose 還沒到，但 socket 已離開 OPEN。先走關閉路徑，避免 status 仍是 open。
+    if (ws && ws.readyState > READY_OPEN && store.getState().status === "open") {
+      settleClose(ws, clientCloseEvent("", 1006, false));
     }
     return false;
   }
