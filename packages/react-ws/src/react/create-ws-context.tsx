@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import {
   createWsSession,
   type WsActions,
@@ -31,12 +31,8 @@ export function createWsContext(options: CreateWsContextOptions) {
   function WsProvider({ children }: PropsWithChildren) {
     const [session] = useState(() => createWsSession(sessionOptions));
 
-    // StrictMode 重掛時，layout 早於子元件的 passive effect，connect() 才不會在 attach 之前被丟掉。
-    useLayoutEffect(() => {
-      session.attach();
-    }, [session]);
-
     useEffect(() => {
+      session.attach();
       if (autoConnect) session.connect();
       return () => session.teardown("provider unmount");
     }, [session]);

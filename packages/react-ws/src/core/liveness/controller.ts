@@ -88,7 +88,7 @@ export function createLivenessController(
       sendPingRef = null;
     },
     onMessage(data) {
-      if (isPong(data) === true) clearTimeoutTimer();
+      if (isPong(data)) clearTimeoutTimer();
     },
   };
 }

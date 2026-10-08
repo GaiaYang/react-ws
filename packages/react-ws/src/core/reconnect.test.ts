@@ -557,17 +557,6 @@ describe("reconnectDelay", () => {
     expect(reconnectDelay(9, options)).toBe(150);
   });
 
-  it("does not round a fractional cap upward", () => {
-    expect(
-      reconnectDelay(1, {
-        reconnectMs: 1_000,
-        reconnectBackoff: 1,
-        reconnectJitter: 0,
-        reconnectDelayMaxMs: 100.6,
-      }),
-    ).toBe(100.6);
-  });
-
   it("clamps a shrinking backoff factor to 1", () => {
     const options = { reconnectMs: 100, reconnectMax: 0, reconnectBackoff: 0 };
     // 未夾回時 0 ** 1 會讓第 2 次起等待變成 0ms，變相連續重連

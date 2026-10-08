@@ -283,30 +283,6 @@ describe("liveness", () => {
     expect(onTimeout).not.toHaveBeenCalled();
   });
 
-  it("truthy non-true isPong does not end the wait", () => {
-    const close = vi.fn();
-    const ws = {
-      readyState: 1,
-      close,
-      send: vi.fn(),
-    } as unknown as WebSocket;
-    const live = createLiveness(
-      {
-        intervalMs: 1_000,
-        timeoutMs: 100,
-        ping: "ping",
-        isPong: () => 1 as unknown as boolean,
-      },
-      () => close(),
-    );
-
-    live.start(ws);
-    live.onMessage("x");
-    vi.advanceTimersByTime(100);
-
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
   it("isPong throw does not clear timeout", () => {
     const onTimeout = vi.fn();
     const controller = createLivenessController(
