@@ -407,6 +407,37 @@ describe("createWsSession", () => {
     expect(session.getState().phase).toBe("reconnecting");
   });
 
+  it("missing WebSocket inside replacement close does not look stopped", () => {
+    const session = createWsSession({ url: "ws://example.test" });
+    const phases: string[] = [];
+    session.emitter.on("failure", () => {
+      phases.push(session.getState().phase);
+      if (session.getState().phase === "stopped") session.disconnect();
+    });
+    session.emitter.on("close", (event) => {
+      if (event.reason !== "reconnect") return;
+      const saved = globalThis.WebSocket;
+      vi.stubGlobal("WebSocket", undefined);
+      session.connect();
+      vi.stubGlobal("WebSocket", saved);
+    });
+
+    session.connect();
+    latestSocket().open();
+    session.connect();
+
+    expect(phases).toEqual(["connecting"]);
+    expect(session.getState()).toMatchObject({
+      status: "connecting",
+      phase: "connecting",
+    });
+    expect(
+      MockWebSocket.instances.filter(
+        (ws) => ws.readyState === MockWebSocket.CONNECTING,
+      ),
+    ).toHaveLength(1);
+  });
+
   it("getter that disconnects and throws still reports the failure", () => {
     const session = createWsSession({
       url: () => {
@@ -1133,6 +1164,45 @@ describe("createWsSession", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 
+  it("connect without WebSocket after exhaustion clears the flag", () => {
+    vi.useFakeTimers();
+    const session = createWsSession({
+      url: "ws://example.test",
+      reconnectMs: 100,
+      reconnectMax: 1,
+      reconnectBackoff: 1,
+      reconnectJitter: 0,
+      reconnectMinUptimeMs: 0,
+    });
+
+    session.connect();
+    latestSocket().open();
+    latestSocket().close();
+    vi.advanceTimersByTime(100);
+    latestSocket().close();
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+      reconnectAttempt: 1,
+      reconnectExhausted: true,
+    });
+
+    const failures: string[] = [];
+    session.emitter.on("failure", (detail) => {
+      if (detail.cause instanceof Error) failures.push(detail.cause.message);
+    });
+    vi.stubGlobal("WebSocket", undefined);
+    session.connect();
+
+    expect(failures).toEqual(["WebSocket is undefined"]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+      reconnectAttempt: 0,
+      reconnectExhausted: false,
+    });
+  });
+
   it("getter connect without WebSocket does not let the outer connect replace the socket", () => {
     let opened = false;
     const session = createWsSession({
@@ -1243,5 +1313,49 @@ describe("createWsSession", () => {
       phase: "stopped",
     });
     expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  it("send while CLOSING delivers the server close, not a synthetic 1006", () => {
+    const session = createWsSession({ url: "ws://example.test" });
+    const closes: Array<{ code: number; reason: string }> = [];
+    session.emitter.on("close", (event) => {
+      closes.push({ code: event.code, reason: event.reason });
+    });
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+    socket.readyState = 2;
+
+    expect(session.send("x")).toBe(false);
+    expect(session.getState().status).toBe("open");
+    expect(closes).toEqual([]);
+
+    socket.onclose?.({
+      type: "close",
+      code: 4401,
+      reason: "token expired",
+      wasClean: true,
+    } as CloseEvent);
+
+    expect(closes).toEqual([{ code: 4401, reason: "token expired" }]);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+    });
+  });
+
+  it("send when already CLOSED and onclose never came leaves status closed", () => {
+    const session = createWsSession({ url: "ws://example.test" });
+    session.connect();
+    const socket = latestSocket();
+    socket.open();
+    socket.readyState = MockWebSocket.CLOSED;
+    socket.onclose = null;
+
+    expect(session.send("x")).toBe(false);
+    expect(session.getState()).toMatchObject({
+      status: "closed",
+      phase: "stopped",
+    });
   });
 });

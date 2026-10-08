@@ -10,6 +10,7 @@ import {
 } from "./reconnect";
 import {
   MAX_TIMEOUT_MS,
+  READY_CLOSING,
   READY_CONNECTING,
   READY_OPEN,
   clientCloseEvent,
@@ -163,8 +164,10 @@ export interface WsSession extends WsActions {
   emitter: WsEventsEmitter;
   /** `disconnect` 與 Provider 卸載共用，避免兩處漏清 timer */
   teardown: (reason: string) => void;
-  /** Provider 的 effect 再次掛上時呼叫，卸載期間的 `connect()` 才會恢復 */
+  /** 子元件 layout 之前呼叫，這個 commit 的 `connect()` 才開得了線 */
   attach: () => void;
+  /** layout 卸載時呼叫。這時的 `connect()` 不開線，也不留到下次掛載 */
+  detach: () => void;
 }
 
 function defaultParse(data: MessageEvent["data"]): unknown {
@@ -207,8 +210,10 @@ export function createWsSession(options: WsSessionOptions): WsSession {
   );
 
   let wsCurrent: WebSocket | null = null;
+  /** 已建好、還沒寫進 wsCurrent。換線 close 裡的 connect 必須看得見它 */
+  let installing: WebSocket | null = null;
   let connectGeneration = 0;
-  /** 只有 Provider 卸載會關掉。`disconnect()` 之後仍可再 `connect()` */
+  /** Provider layout 卸載後為 false，下一個 layout 掛上才恢復。沒有 Provider 時維持 true */
   let providerAttached = true;
   let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -266,6 +271,10 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     providerAttached = true;
   }
 
+  function detach(): void {
+    providerAttached = false;
+  }
+
   function teardown(reason: string): void {
     if (reason === "provider unmount") providerAttached = false;
     connectGeneration += 1;
@@ -302,16 +311,19 @@ export function createWsSession(options: WsSessionOptions): WsSession {
         source: "construct" as const,
         cause: new Error("WebSocket is undefined"),
       };
-      // 現役 socket 還在就留著。沒有的話不能停在 idle，否則和「還沒 connect」一樣。
-      if (wsCurrent != null && !fired) {
+      // 現役或正在裝上的 socket 還在就留著。寫成 stopped 會讓外層把新線丟掉。
+      // 沒有的話不能停在 idle，否則和「還沒 connect」一樣。
+      if ((wsCurrent != null && !fired) || installing != null) {
         emitter.emit("failure", detail);
         return;
       }
       // 沒有 WebSocket 就不要再排。只清掉還在等的那次。
       // 換線 close 回呼裡呼叫時，onConnectBegin 已把 nextReconnectAt 歸零，不能 cancel()，
       // 否則外層留下的 socket 之後不會再重連。
-      if (!fired && store.getState().nextReconnectAt > 0) {
-        reconnect.cancel();
+      // 沒有現役 socket、計時器也沒剛觸發：跟有 WebSocket 的手動 connect 一樣歸零。
+      if (!fired) {
+        if (store.getState().nextReconnectAt > 0) reconnect.cancel();
+        else reconnect.prepareManualConnect();
       }
       store.setState({ status: "closed", phase: "stopped" });
       emitter.emit("failure", detail);
@@ -371,38 +383,44 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       return;
     }
 
-    const fromReconnect = reconnect.onConnectBegin();
-    liveness.stop();
+    const outerInstalling = installing;
+    installing = ws;
+    try {
+      const fromReconnect = reconnect.onConnectBegin();
+      liveness.stop();
 
-    const prev = wsCurrent;
-    if (prev) {
-      clearConnectTimer();
-      wsCurrent = null;
-      detachAndClose(prev);
-      // 舊線已死。status 先離開 open，close 回呼才不會用 status === "open" 去送。
-      // phase 用這次嘗試自己的：手動是 connecting，已觸發的自動重連維持 reconnecting。
+      const prev = wsCurrent;
+      if (prev) {
+        clearConnectTimer();
+        wsCurrent = null;
+        detachAndClose(prev);
+        // 舊線已死。status 先離開 open，close 回呼才不會用 status === "open" 去送。
+        // phase 用這次嘗試自己的：手動是 connecting，已觸發的自動重連維持 reconnecting。
+        store.setState({
+          status: "closed",
+          phase: fromReconnect ? "reconnecting" : "connecting",
+        });
+        emitter.emit("close", clientCloseEvent("reconnect"));
+      }
+
+      // disconnect 或已接上的 connect 才算接管。建構失敗沒有 socket，這顆要留著。
+      if (
+        generation !== connectGeneration &&
+        (wsCurrent != null || store.getState().phase === "idle")
+      ) {
+        detachAndClose(ws);
+        return;
+      }
+
       store.setState({
-        status: "closed",
+        status: "connecting",
         phase: fromReconnect ? "reconnecting" : "connecting",
       });
-      emitter.emit("close", clientCloseEvent("reconnect"));
+      wsCurrent = ws;
+      armConnectTimer(ws);
+    } finally {
+      installing = outerInstalling;
     }
-
-    // disconnect 或已接上的 connect 才算接管。建構失敗沒有 socket，這顆要留著。
-    if (
-      generation !== connectGeneration &&
-      (wsCurrent != null || store.getState().phase === "idle")
-    ) {
-      detachAndClose(ws);
-      return;
-    }
-
-    store.setState({
-      status: "connecting",
-      phase: fromReconnect ? "reconnecting" : "connecting",
-    });
-    wsCurrent = ws;
-    armConnectTimer(ws);
 
     ws.onopen = (event) => {
       if (wsCurrent !== ws) return;
@@ -470,8 +488,13 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       ws.send(data);
       return true;
     }
-    // onclose 還沒到，但 socket 已離開 OPEN。先走關閉路徑，避免 status 仍是 open。
-    if (ws && ws.readyState > READY_OPEN && store.getState().status === "open") {
+    // CLOSING 的 onclose 還會帶伺服器的 code。這裡先收掉會改成 1006。
+    // 已經 CLOSED 且 onclose 沒來，才自己補關閉，避免 status 停在 open。
+    if (
+      ws &&
+      ws.readyState > READY_CLOSING &&
+      store.getState().status === "open"
+    ) {
       settleClose(ws, clientCloseEvent("", 1006, false));
     }
     return false;
@@ -492,5 +515,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     getState: store.getState,
     teardown,
     attach,
+    detach,
   };
 }

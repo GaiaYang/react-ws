@@ -1,5 +1,11 @@
 import { act, cleanup, render } from "@testing-library/react";
-import { StrictMode, createElement, useEffect } from "react";
+import {
+  StrictMode,
+  createElement,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WsEvents } from "../core/session";
 import { createWsContext } from "./create-ws-context";
@@ -135,6 +141,45 @@ describe("createWsContext", () => {
     };
     expect(() => api.send("x")).toThrow(err);
     expect(ws.sent).toEqual([]);
+  });
+
+  it("a subscriber mounted onto an open socket receives this commit's message", async () => {
+    const seen: string[] = [];
+    const { WsProvider, useWsEvents } = createWsContext({
+      url: "ws://test",
+      autoConnect: true,
+    });
+
+    function Child() {
+      useWsEvents("message", (data) => {
+        seen.push(JSON.stringify(data));
+      });
+      return null;
+    }
+
+    function Parent() {
+      const [show, setShow] = useState(false);
+      useLayoutEffect(() => {
+        const ws = MockWebSocket.instances.at(-1);
+        if (ws && ws.readyState === MockWebSocket.CONNECTING) ws.open();
+        if (show) ws?.message('{"n":1}');
+      }, [show]);
+      return createElement(
+        "button",
+        { onClick: () => setShow(true) },
+        show ? createElement(Child) : "show",
+      );
+    }
+
+    const view = render(createElement(WsProvider, null, createElement(Parent)));
+    await act(async () => {});
+    seen.length = 0;
+
+    await act(async () => {
+      view.getByText("show").click();
+    });
+
+    expect(seen).toEqual(['{"n":1}']);
   });
 
   it("connect → message → disconnect", async () => {
@@ -518,17 +563,22 @@ describe("createWsContext", () => {
     expect(latestWs().sent).toEqual([]);
   });
 
-  it("send while the socket is closing does not leave status open", async () => {
-    const { WsProvider, useWsActions, useWsState } = createWsContext({
-      url: "ws://test",
-      autoConnect: true,
-    });
+  it("send while the socket is closing keeps the server close code", async () => {
+    const { WsProvider, useWsActions, useWsState, useWsEvents } =
+      createWsContext({
+        url: "ws://test",
+        autoConnect: true,
+      });
+    const closes: Array<{ code: number; reason: string }> = [];
 
     let api!: ReturnType<typeof useWsActions>;
     function Probe() {
       api = useWsActions();
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
+      useWsEvents("close", (event) => {
+        closes.push({ code: event.code, reason: event.reason });
+      });
       return createElement("div", {
         "data-status": status,
         "data-phase": phase,
@@ -551,12 +601,25 @@ describe("createWsContext", () => {
     await act(async () => {
       expect(api.send("x")).toBe(false);
     });
+    expect(status()).toBe("open");
+    expect(closes).toEqual([]);
+
+    await act(async () => {
+      latestWs().onclose?.(
+        new CloseEvent("close", {
+          code: 4401,
+          reason: "token expired",
+          wasClean: true,
+        }),
+      );
+    });
     expect(api.getState()).toMatchObject({
       status: "closed",
       phase: "stopped",
     });
     expect(status()).toBe("closed");
     expect(phase()).toBe("stopped");
+    expect(closes).toEqual([{ code: 4401, reason: "token expired" }]);
     expect(latestWs().sent).toEqual([]);
   });
 
@@ -2183,6 +2246,48 @@ describe("createWsContext", () => {
       const status = useWsState((s) => s.status);
       const phase = useWsState((s) => s.phase);
       useEffect(() => {
+        connect();
+      }, [connect]);
+      return createElement("div", {
+        "data-status": status,
+        "data-phase": phase,
+      });
+    }
+
+    const { container } = render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(WsProvider, null, createElement(Probe)),
+      ),
+    );
+    const status = () =>
+      container.querySelector("[data-status]")?.getAttribute("data-status");
+    const phase = () =>
+      container.querySelector("[data-phase]")?.getAttribute("data-phase");
+
+    await act(async () => {});
+
+    expect(status()).toBe("connecting");
+    expect(phase()).toBe("connecting");
+    expect(
+      MockWebSocket.instances.filter(
+        (ws) => ws.readyState === MockWebSocket.CONNECTING,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("strict mode child layout connect still opens a socket", async () => {
+    const { WsProvider, useWsActions, useWsState } = createWsContext({
+      url: "ws://test",
+      autoConnect: false,
+    });
+
+    function Probe() {
+      const { connect } = useWsActions();
+      const status = useWsState((s) => s.status);
+      const phase = useWsState((s) => s.phase);
+      useLayoutEffect(() => {
         connect();
       }, [connect]);
       return createElement("div", {
