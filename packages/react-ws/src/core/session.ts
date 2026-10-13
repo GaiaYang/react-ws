@@ -291,6 +291,34 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     }
   }
 
+  /** 這次 `connect` 之後又有 connect、disconnect，或沒有 WebSocket 的嘗試 */
+  function attemptTakenOver(generation: number): boolean {
+    return generation !== connectGeneration;
+  }
+
+  /**
+   * 新 socket 沒接手時，這次建構失敗仍算在現役連線上。
+   *
+   * 現役還是這次開始時那顆，或已經沒有 socket。
+   */
+  function failureBelongsToCurrentSocket(
+    socketAtStart: WebSocket | null,
+  ): boolean {
+    return wsCurrent == null || wsCurrent === socketAtStart;
+  }
+
+  /**
+   * 後續的 disconnect，或已接上 socket 的 connect，才取代這顆剛建好的線。
+   *
+   * 巢狀建構失敗沒留下 socket，而且 phase 不是 idle，這顆要裝上。
+   */
+  function builtSocketSuperseded(generation: number): boolean {
+    return (
+      attemptTakenOver(generation) &&
+      (wsCurrent != null || store.getState().phase === "idle")
+    );
+  }
+
   function connect(): void {
     if (!providerAttached) return;
     const socketAtStart = wsCurrent;
@@ -329,21 +357,19 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       resolvedUrl = resolveMaybeGetter(url);
       if (resolvedUrl === "") throw new Error("empty url");
       // getter 裡的 connect 已接管。這裡再 new WebSocket 會多開一條立刻關掉的線。
-      if (generation !== connectGeneration) return;
+      if (attemptTakenOver(generation)) return;
       if (protocols !== undefined) {
         resolvedProtocols = resolveMaybeGetter(protocols);
       }
-      if (generation !== connectGeneration) return;
+      if (attemptTakenOver(generation)) return;
       ws =
         resolvedProtocols == null
           ? new WebSocket(resolvedUrl)
           : new WebSocket(resolvedUrl, resolvedProtocols);
     } catch (cause) {
-      // getter 裡的 disconnect／connect 已經收斂，外層不可再改 store。
-      // 新 socket 已接手時，這次失敗不能算到它頭上。
-      // 舊線還在，或斷線後沒有接手者，失敗仍要送出。
-      if (generation !== connectGeneration) {
-        if (wsCurrent == null || wsCurrent === socketAtStart) {
+      // 已經接管就不要再改 store。沒有接手的 socket 時，失敗仍要送出。
+      if (attemptTakenOver(generation)) {
+        if (failureBelongsToCurrentSocket(socketAtStart)) {
           emitter.emit("failure", { source: "construct", cause });
         }
         return;
@@ -364,7 +390,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       return;
     }
 
-    if (generation !== connectGeneration) {
+    if (attemptTakenOver(generation)) {
       detachAndClose(ws);
       return;
     }
@@ -386,11 +412,7 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       emitter.emit("close", clientCloseEvent("reconnect"));
     }
 
-    // disconnect 或已接上的 connect 才算接管。建構失敗沒有 socket，這顆要留著。
-    if (
-      generation !== connectGeneration &&
-      (wsCurrent != null || store.getState().phase === "idle")
-    ) {
+    if (builtSocketSuperseded(generation)) {
       detachAndClose(ws);
       return;
     }

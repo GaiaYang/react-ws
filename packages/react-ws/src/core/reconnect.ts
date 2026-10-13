@@ -183,26 +183,36 @@ export interface Reconnect {
   bindOnReconnect: (fn: () => void) => void;
 }
 
+/**
+ * 這一輪自動重連的階段。有沒有計時器由階段決定。
+ *
+ * - `idle`：沒有進行中的自動重連。`attempt` 仍可能大於 0，要等最短在線時間才歸零
+ * - `waiting`：倒數中
+ * - `fired`：倒數已結束，這次連線還沒開始，或還沒判定建構失敗
+ * - `reuse`：手動連線取消了還沒跑的倒數。`open` 前失敗時，用同一個 `attempt` 再排
+ */
+type Step =
+  | { kind: "idle" }
+  | { kind: "waiting"; timer: ReturnType<typeof setTimeout> }
+  | { kind: "fired" }
+  | { kind: "reuse" };
+
 export function createReconnect(
   options: Required<ReconnectOptions>,
   apply: (patch: ReconnectPatch) => void,
 ): Reconnect {
+  // cancel() 之後、下一次 onConnectBegin 之前，schedule 直接拒絕
   let intentionalClose = false;
-  let fromTimer = false;
-  // 等待中的手動 connect 取消了還沒跑的那次。握手在 open 前失敗時，用同一個 attempt 再排。
-  let reusePendingAttempt = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let step: Step = { kind: "idle" };
   let uptimeTimer: ReturnType<typeof setTimeout> | null = null;
   let onReconnect = () => {};
   // 本輪計數以這裡為準；不回讀 store，避免拿到半套狀態
   let attempt = 0;
 
-  const clearTimer = () => {
-    if (timer != null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  };
+  const attemptReachedMax = () =>
+    typeof options.reconnectMax === "number" &&
+    options.reconnectMax > 0 &&
+    attempt >= options.reconnectMax;
 
   const clearUptimeTimer = () => {
     if (uptimeTimer != null) {
@@ -216,15 +226,29 @@ export function createReconnect(
     apply({ reconnectAttempt: 0, reconnectExhausted: false });
   };
 
+  const armTimer = () => {
+    // 同一輪只留一顆倒數。再排時取消上一顆，避免兩次 onReconnect
+    if (step.kind === "waiting") clearTimeout(step.timer);
+    const delay = reconnectDelay(attempt, options);
+    apply({
+      reconnectAttempt: attempt,
+      nextReconnectAt: Date.now() + delay,
+    });
+    const timer = setTimeout(() => {
+      if (step.kind !== "waiting" || step.timer !== timer) return;
+      // 先標成 fired，onReconnect 裡的 connect 才分得出這次是計時器觸發
+      step = { kind: "fired" };
+      onReconnect();
+    }, delay);
+    step = { kind: "waiting", timer };
+  };
+
   const clearTimerTrigger = (): boolean => {
-    if (!fromTimer || timer != null) return false;
-    fromTimer = false;
-    const reconnectMax = options.reconnectMax;
+    if (step.kind !== "fired") return false;
+    step = { kind: "idle" };
     // 時間點已過，清掉倒數。這次已達上限時不再重試
     apply(
-      typeof reconnectMax === "number" &&
-        reconnectMax > 0 &&
-        attempt >= reconnectMax
+      attemptReachedMax()
         ? { nextReconnectAt: 0, reconnectExhausted: true }
         : { nextReconnectAt: 0 },
     );
@@ -235,52 +259,32 @@ export function createReconnect(
     // 沒撐滿 minUptime：清掉待跑的歸零，讓退避沿用本輪計數
     clearUptimeTimer();
     const reconnectMs = options.reconnectMs;
-    const reconnectMax = options.reconnectMax;
     if (
       intentionalClose ||
       typeof reconnectMs !== "number" ||
       !Number.isFinite(reconnectMs) ||
       reconnectMs <= 0
     ) {
-      reusePendingAttempt = false;
+      if (step.kind === "reuse") step = { kind: "idle" };
       return false;
     }
-    if (reusePendingAttempt) {
-      reusePendingAttempt = false;
-      fromTimer = true;
+    if (step.kind === "reuse") {
       armTimer();
       return true;
     }
-    if (
-      typeof reconnectMax === "number" &&
-      reconnectMax > 0 &&
-      attempt >= reconnectMax
-    ) {
+    if (attemptReachedMax()) {
       // 關閉路徑的倒數在連線開始時已歸零。建構失敗達上限時，這次一併清掉已到期的時間戳
       apply({ reconnectExhausted: true, nextReconnectAt: 0 });
       return false;
     }
     attempt += 1;
-    fromTimer = true;
     armTimer();
     return true;
   };
 
-  const armTimer = () => {
-    const delay = reconnectDelay(attempt, options);
-    apply({
-      reconnectAttempt: attempt,
-      nextReconnectAt: Date.now() + delay,
-    });
-    timer = setTimeout(() => {
-      timer = null;
-      onReconnect();
-    }, delay);
-  };
-
   return {
     prepareManualConnect() {
-      if (fromTimer || reusePendingAttempt) return;
+      if (step.kind !== "idle") return;
       attempt = 0;
       apply({
         nextReconnectAt: 0,
@@ -289,28 +293,31 @@ export function createReconnect(
       });
     },
     onConnectBegin() {
-      // clearTimer 之後分不出「還在等」和「已經觸發」
-      const fired = fromTimer && timer == null;
-      const inCycle = fromTimer;
-      clearTimer();
+      if (step.kind === "waiting") clearTimeout(step.timer);
       clearUptimeTimer();
       intentionalClose = false;
-      fromTimer = false;
-      reusePendingAttempt = inCycle && !fired;
-      if (inCycle) {
-        apply({ nextReconnectAt: 0 });
-      } else {
-        attempt = 0;
-        apply({
-          nextReconnectAt: 0,
-          reconnectAttempt: 0,
-          reconnectExhausted: false,
-        });
+      switch (step.kind) {
+        case "fired":
+          step = { kind: "idle" };
+          apply({ nextReconnectAt: 0 });
+          return true;
+        case "waiting":
+          step = { kind: "reuse" };
+          apply({ nextReconnectAt: 0 });
+          return false;
+        default:
+          step = { kind: "idle" };
+          attempt = 0;
+          apply({
+            nextReconnectAt: 0,
+            reconnectAttempt: 0,
+            reconnectExhausted: false,
+          });
+          return false;
       }
-      return fired;
     },
     onOpen() {
-      reusePendingAttempt = false;
+      if (step.kind === "reuse") step = { kind: "idle" };
       const minUptime = options.reconnectMinUptimeMs;
       // 非有限數不是「永遠不歸零」；沿用文件上的預設，避免 setTimeout(NaN) 立刻歸零
       const delay = Number.isFinite(minUptime)
@@ -331,23 +338,22 @@ export function createReconnect(
     scheduleAfterClose: schedule,
     clearTimerTrigger,
     onConstructFailure() {
-      // 次數在排這次等待時已經加過。先清已觸發旗標，再讓 schedule 決定下一次；不要先把倒數寫成 0
-      if (fromTimer && timer == null) {
-        fromTimer = false;
-        return schedule() ? "reconnecting" : "stopped";
+      switch (step.kind) {
+        case "fired":
+          // 次數在排這次等待時已經加過。先離開 fired，再讓 schedule 寫下一次；不要先把倒數寫成 0
+          step = { kind: "idle" };
+          return schedule() ? "reconnecting" : "stopped";
+        case "waiting":
+          armTimer();
+          return "reconnecting";
+        default:
+          return "noop";
       }
-      if (fromTimer && timer != null) {
-        clearTimer();
-        armTimer();
-        return "reconnecting";
-      }
-      return "noop";
     },
     cancel() {
       intentionalClose = true;
-      fromTimer = false;
-      reusePendingAttempt = false;
-      clearTimer();
+      if (step.kind === "waiting") clearTimeout(step.timer);
+      step = { kind: "idle" };
       clearUptimeTimer();
       attempt = 0;
       apply({
