@@ -3,11 +3,7 @@ import { livenessDelaysOk } from "./liveness/controller";
 import { resolveLiveness } from "./liveness/liveness";
 import type { LivenessOptions } from "./liveness/types";
 import { resolveMaybeGetter, type MaybeGetter } from "./maybe-getter";
-import {
-  createReconnect,
-  resolveReconnectOptions,
-  type ReconnectOptions,
-} from "./reconnect";
+import { createReconnect, type ReconnectOptions } from "./reconnect";
 import {
   MAX_TIMEOUT_MS,
   READY_CONNECTING,
@@ -35,19 +31,15 @@ export interface WsSessionOptions extends ReconnectOptions {
   /**
    * 傳入 `new WebSocket(url, protocols)`
    *
-   * 未設定時不傳入第二個參數。
-   *
-   * getter 回傳空字串時會原樣傳入，不會改成省略。
+   * 未設定時不傳入第二個參數。空字串會原樣傳入。
    */
-  protocols?: MaybeGetter<string | string[]>;
+  protocols?: string | string[];
   /**
    * 將原始 `MessageEvent.data` 轉換為應用程式資料
    *
+   * 未設定時原樣轉發，不解析內容。
+   *
    * 擲出例外時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。
-   *
-   * 預設會把字串交給 `JSON.parse`。
-   *
-   * 解析失敗時回傳原始字串，非字串資料則原樣回傳。
    */
   parse?: (data: MessageEvent["data"]) => unknown;
   /**
@@ -75,7 +67,7 @@ export interface WsEvents {
   /**
    * 收到訊息
    *
-   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 或 `isPong` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。斷線後沒有新 socket 接手時，接著擲出仍會觸發 `"failure"`。`parse` 在 `connect()` 已換線之後的擲出，不會算到新 socket 的 `"failure"`。`isPong` 擲出一律觸發 `"failure"`，`source` 為 `"isPong"`。
+   * @param parsed 經過 `parse` 處理後的資料。`parse` 擲出時觸發 `"failure"`，不會觸發 `"message"`，也不會關閉 WebSocket。`parse` 或 `isPong` 若同步 `disconnect()` 或 `connect()`，這顆 socket 已不是現役時不會再觸發 `"message"`。擲出仍會觸發 `"failure"`。`isPong` 的 `source` 為 `"isPong"`。
    * @param event 這次的 `MessageEvent`。
    */
   message: (parsed: unknown, event: MessageEvent) => void;
@@ -92,16 +84,15 @@ export interface WsEvents {
   /**
    * 不是 socket 事件的失敗。`cause` 是擲出的值（或套件建立的 `Error`）。
    *
-   * - `"construct"`：空 URL、`url`／`protocols` 取值失敗、`new WebSocket()` 失敗，或沒有 `WebSocket`。
+   * - `"construct"`：空 URL、`url` 取值失敗、`new WebSocket()` 失敗，或沒有 `WebSocket`。
    *   - 空 URL 的 `cause` 是 `Error`，其 `message` 為 `"empty url"`。
    *   - 沒有 `WebSocket` 的 `cause` 是 `Error`，其 `message` 為 `"WebSocket is undefined"`。
    * - `"parse"`：`parse` 擲出。
    * - `"isPong"`：`isPong` 擲出。
-   * - `"liveness"`：`intervalMs`／`timeoutMs` 無效。`cause` 是 `Error`，其 `message` 為 `"invalid liveness"`。
    * - `"ping"`：`ping` 擲出，或這次 ping 的 `WebSocket.send` 擲出。該次不會送出，等待仍會開始。同步 `disconnect()` 或 `connect()` 之後的擲出仍會觸發。
    */
   failure: (detail: {
-    source: "construct" | "parse" | "isPong" | "liveness" | "ping";
+    source: "construct" | "parse" | "isPong" | "ping";
     cause: unknown;
   }) => void;
 }
@@ -146,6 +137,8 @@ export interface WsActions {
    * 提前呼叫 `connect()` 失敗後，這一輪自動重連仍會繼續，且不計入 `reconnectMax`。
    *
    * 沒有 `WebSocket` 時不沿用上面的排程：沒有現役 socket 就變成 `phase: "stopped"`，不再排下一次。已有 socket 則維持不變。
+   *
+   * getter 或事件回呼裡又呼叫的 `connect()`／`disconnect()` 以那一次為準。外層若已建好 socket 但被取代，會關掉那顆，不再裝上。失敗仍會觸發 `"failure"`。
    */
   connect: () => void;
   /**
@@ -168,12 +161,7 @@ export interface WsSession extends WsActions {
 }
 
 function defaultParse(data: MessageEvent["data"]): unknown {
-  if (typeof data !== "string") return data;
-  try {
-    return JSON.parse(data) as unknown;
-  } catch {
-    return data;
-  }
+  return data;
 }
 
 /** 非有限數、負數、`0` 都關閉。超過平台上限會溢位成立刻觸發，夾回上限 */
@@ -198,13 +186,16 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     connectTimeoutMs: connectTimeoutOption,
   } = options;
   const connectTimeoutMs = resolveConnectTimeoutMs(connectTimeoutOption);
+  if (
+    livenessOptions &&
+    !livenessDelaysOk(livenessOptions.intervalMs, livenessOptions.timeoutMs)
+  ) {
+    throw new Error("invalid liveness");
+  }
 
   const store = createWsStore();
   const emitter = createEmitter<WsEvents>();
-  const reconnect = createReconnect(
-    resolveReconnectOptions(options),
-    store.setState,
-  );
+  const reconnect = createReconnect(options, store.setState);
 
   let wsCurrent: WebSocket | null = null;
   let connectGeneration = 0;
@@ -291,55 +282,42 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     }
   }
 
-  /** 這次 `connect` 之後又有 connect、disconnect，或沒有 WebSocket 的嘗試 */
-  function attemptTakenOver(generation: number): boolean {
+  function takenOver(generation: number): boolean {
     return generation !== connectGeneration;
   }
 
-  /**
-   * 新 socket 沒接手時，這次建構失敗仍算在現役連線上。
-   *
-   * 現役還是這次開始時那顆，或已經沒有 socket。
-   */
-  function failureBelongsToCurrentSocket(
-    socketAtStart: WebSocket | null,
-  ): boolean {
-    return wsCurrent == null || wsCurrent === socketAtStart;
-  }
-
-  /**
-   * 後續的 disconnect，或已接上 socket 的 connect，才取代這顆剛建好的線。
-   *
-   * 巢狀建構失敗沒留下 socket，而且 phase 不是 idle，這顆要裝上。
-   */
-  function builtSocketSuperseded(generation: number): boolean {
-    return (
-      attemptTakenOver(generation) &&
-      (wsCurrent != null || store.getState().phase === "idle")
-    );
+  /** 後續的 connect／disconnect 已結束。不要把沒裝上的 socket 留在 connecting */
+  function dropBuiltSocket(ws: WebSocket): void {
+    detachAndClose(ws);
+    const state = store.getState();
+    if (
+      wsCurrent == null &&
+      state.phase !== "idle" &&
+      state.nextReconnectAt === 0
+    ) {
+      store.setState({ status: "closed", phase: "stopped" });
+    }
   }
 
   function connect(): void {
     if (!providerAttached) return;
-    const socketAtStart = wsCurrent;
+    const generation = ++connectGeneration;
     // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零
     reconnect.prepareManualConnect();
+    if (takenOver(generation)) return;
+
     if (typeof globalThis.WebSocket === "undefined") {
-      // 外層 connect 還在 getter 裡。不推進的話，外層會再把留下的舊線換掉。
-      connectGeneration += 1;
-      const fired = reconnect.clearTimerTrigger();
       const detail = {
         source: "construct" as const,
         cause: new Error("WebSocket is undefined"),
       };
+      const fired = reconnect.clearTimerTrigger();
       // 現役 socket 還在就留著。沒有的話不能停在 idle，否則和「還沒 connect」一樣。
       if (wsCurrent != null && !fired) {
         emitter.emit("failure", detail);
         return;
       }
       // 沒有 WebSocket 就不要再排。只清掉還在等的那次。
-      // 換線 close 回呼裡呼叫時，onConnectBegin 已把 nextReconnectAt 歸零，不能 cancel()，
-      // 否則外層留下的 socket 之後不會再重連。
       if (!fired && store.getState().nextReconnectAt > 0) {
         reconnect.cancel();
       }
@@ -348,50 +326,32 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       return;
     }
 
-    const generation = ++connectGeneration;
-    let resolvedUrl: string;
-    let resolvedProtocols: string | string[] | undefined;
     let ws: WebSocket;
-    // 建構失敗保留舊線與 store（與 getter 失敗同一路）
     try {
-      resolvedUrl = resolveMaybeGetter(url);
+      const resolvedUrl = resolveMaybeGetter(url);
       if (resolvedUrl === "") throw new Error("empty url");
-      // getter 裡的 connect 已接管。這裡再 new WebSocket 會多開一條立刻關掉的線。
-      if (attemptTakenOver(generation)) return;
-      if (protocols !== undefined) {
-        resolvedProtocols = resolveMaybeGetter(protocols);
-      }
-      if (attemptTakenOver(generation)) return;
+      // 後續的 connect／disconnect 已接管，不要再多開一條。
+      if (takenOver(generation)) return;
       ws =
-        resolvedProtocols == null
+        protocols === undefined
           ? new WebSocket(resolvedUrl)
-          : new WebSocket(resolvedUrl, resolvedProtocols);
+          : new WebSocket(resolvedUrl, protocols);
     } catch (cause) {
-      // 已經接管就不要再改 store。沒有接手的 socket 時，失敗仍要送出。
-      if (attemptTakenOver(generation)) {
-        if (failureBelongsToCurrentSocket(socketAtStart)) {
-          emitter.emit("failure", { source: "construct", cause });
-        }
-        return;
-      }
-      // 先 store 再 emit，避免 handler 擲出／disconnect 讓這次排程沒寫進去
-      const outcome = reconnect.onConstructFailure();
-      switch (outcome) {
-        case "stopped":
+      // 先 store 再 emit，避免 handler 裡的 disconnect 蓋掉這次排程
+      if (!takenOver(generation)) {
+        const outcome = reconnect.onConstructFailure();
+        if (outcome === "stopped") {
           store.setState({ status: "closed", phase: "stopped" });
-          break;
-        case "reconnecting":
+        } else if (outcome === "reconnecting") {
           store.setState({ status: "closed", phase: "reconnecting" });
-          break;
-        default:
-          break;
+        }
       }
       emitter.emit("failure", { source: "construct", cause });
       return;
     }
 
-    if (attemptTakenOver(generation)) {
-      detachAndClose(ws);
+    if (takenOver(generation)) {
+      dropBuiltSocket(ws);
       return;
     }
 
@@ -412,8 +372,8 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       emitter.emit("close", clientCloseEvent("reconnect"));
     }
 
-    if (builtSocketSuperseded(generation)) {
-      detachAndClose(ws);
+    if (takenOver(generation)) {
+      dropBuiltSocket(ws);
       return;
     }
 
@@ -431,19 +391,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       store.setState({ status: "open", phase: "open" });
       // 已經 open 的這顆先通知，第一個 ping 不得早於訂閱者
       emitter.emit("open", event);
-      // 新 socket 已接手時，這次 liveness 失敗不能算到它頭上。
-      // 斷線後沒有接手者，無效 liveness 仍要送出，且不能啟動心跳。
-      if (wsCurrent !== ws && wsCurrent != null) return;
-      if (
-        livenessOptions &&
-        !livenessDelaysOk(livenessOptions.intervalMs, livenessOptions.timeoutMs)
-      ) {
-        emitter.emit("failure", {
-          source: "liveness",
-          cause: new Error("invalid liveness"),
-        });
-        return;
-      }
       if (wsCurrent !== ws) return;
       liveness.start(ws);
     };
@@ -454,9 +401,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
       try {
         data = parse(event.data);
       } catch (cause) {
-        // 新 socket 已接手時，這顆舊訊息的失敗不能算到它頭上。
-        // 斷線後沒有接手者，parse 的失敗仍要送出去。
-        if (wsCurrent !== ws && wsCurrent != null) return;
         emitter.emit("failure", { source: "parse", cause });
         return;
       }

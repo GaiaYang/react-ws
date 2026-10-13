@@ -12,6 +12,7 @@ export const { WsProvider, useWsActions, useWsState, useWsEvents } =
     reconnectMs: 2000,
     autoConnect: true,
     reconnectMax: DEMO_WS_RECONNECT_MAX,
+    parse: (data) => (typeof data === "string" ? JSON.parse(data) : data),
     liveness: {
       intervalMs: 10_000,
       timeoutMs: 5_000,

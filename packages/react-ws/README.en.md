@@ -242,13 +242,9 @@ MessageEvent
       "message"
 ```
 
-Default `parse` behavior:
+When `parse` is omitted, `MessageEvent.data` is forwarded unchanged. The package does not decode it.
 
-- Strings are passed to `JSON.parse`
-- If JSON parsing fails, the raw string is returned
-- Non-string data is returned as-is
-
-If `parse` calls `disconnect()` or `connect()` and this socket is no longer current when `parse` returns, `"message"` does not fire. A throw after `disconnect()` still fires `"failure"` when no new socket took over. A throw after `connect()` replaced the socket does not fire `"failure"` on the new one.
+If `parse` calls `disconnect()` or `connect()` and this socket is no longer current when `parse` returns, `"message"` does not fire. A throw still fires `"failure"`.
 
 ### Event types
 
@@ -257,7 +253,7 @@ If `parse` calls `disconnect()` or `connect()` and this socket is no longer curr
 | `"message"` | `(data: unknown, event: MessageEvent) => void`                                                             | `data` is the result after `parse`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `"open"`    | `(event: Event) => void`                                                                                   | The WebSocket connection opened.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `"error"`   | `(event: Event) => void`                                                                                   | The original `Event` from the native WebSocket `"error"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `"failure"` | `(detail: { source: "construct" \| "parse" \| "isPong" \| "liveness" \| "ping"; cause: unknown }) => void` | Not a socket event, and not an `Event`. Empty URL, a getter throw, a `new WebSocket()` throw, a missing `WebSocket`, a thrown `parse`, a thrown `isPong`, invalid liveness, or a failed ping. Invalid liveness uses `"liveness"`. A thrown `isPong` uses `"isPong"`. A thrown `ping`, or a `WebSocket.send` throw for that ping, uses `"ping"`. `cause` is the thrown value. An empty URL's `cause` is an `Error` whose message is `"empty url"`. Invalid liveness's `cause` is an `Error` whose message is `"invalid liveness"`. There is no `type` or `message`. |
+| `"failure"` | `(detail: { source: "construct" \| "parse" \| "isPong" \| "ping"; cause: unknown }) => void` | Not a socket event, and not an `Event`. Empty URL, a getter throw, a `new WebSocket()` throw, a missing `WebSocket`, a thrown `parse`, a thrown `isPong`, or a failed ping. A thrown `isPong` uses `"isPong"`. A thrown `ping`, or a `WebSocket.send` throw for that ping, uses `"ping"`. `cause` is the thrown value. An empty URL's `cause` is an `Error` whose message is `"empty url"`. There is no `type` or `message`. |
 | `"close"`   | `(event: CloseEvent) => void`                                                                              | The WebSocket connection closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ### Subscription behavior
@@ -282,7 +278,7 @@ A single handler's exception does not affect other subscribers and does not inte
 | `disconnect()` / Provider unmount             | Does not fire                                               | Does not fire                                                     | Fires when a WebSocket exists    | Update the store first, then close the WebSocket                                                                                                                                                                                                                                                                                                              |
 | Handshake / resolve / `new WebSocket` failure | Does not fire                                               | Fires. `source` is `"construct"`, and `cause` is the thrown value | Does not fire                    | Does not replace the existing WebSocket. If an already-fired auto-reconnect timer fails below `reconnectMax`, it schedules again and `phase` stays `reconnecting`. At the cap it becomes `closed` / `stopped` and `reconnectExhausted` is `true`. A pending wait reschedules the same `reconnectAttempt`. See [Reconnect](#reconnect).                        |
 | `parse` throws                                | Does not fire                                               | Fires. `source` is `"parse"`, and `cause` is the thrown value     | Does not fire                    | Does not fire `"message"`, and does not close the WebSocket                                                                                                                                                                                                                                                                                                   |
-| `connect()` replaces an old connection        | Does not fire                                               | Does not fire                                                     | Fires, with reason `"reconnect"` | Before the `"close"` handler, `status` is `closed` (not `open`), so `send` returns `false`. After the handler, if this `connect()` still owns the socket, `status` becomes `"connecting"`. A `connect()` in that handler that fails to construct keeps the socket already built. See [Reconnect → `connect()` replacement rules](#connect-replacement-rules). |
+| `connect()` replaces an old connection        | Does not fire                                               | Does not fire                                                     | Fires, with reason `"reconnect"` | Before the `"close"` handler, `status` is `closed` (not `open`), so `send` returns `false`. After the handler, if this `connect()` still owns the socket, `status` becomes `"connecting"`. A later `connect()` or `disconnect()` in that handler wins, and the socket this attempt already built is closed. See [Reconnect → `connect()` replacement rules](#connect-replacement-rules). |
 
 ## Reconnect
 
@@ -328,7 +324,7 @@ These options take effect only when `reconnectMs > 0`.
 | ---------------------- | ------: | -------------------------------------------------------------------------------------------------------------------- |
 | `reconnectBackoff`     |     `2` | Multiplier for the next wait. `1` keeps a fixed interval.                                                            |
 | `reconnectMax`         |     `0` | Cap on auto-reconnects. `0` means no cap.                                                                            |
-| `reconnectDelayMaxMs`  | `30000` | Cap for one wait, including jitter. `0` means no cap.                                                                |
+| `reconnectDelayMaxMs`  | `30000` | Cap for one wait, including jitter. `0`, negative, and non-finite values use this default.                          |
 | `reconnectJitter`      |   `0.5` | How much to randomly shorten the wait, in `[0, 1]`. `0` means no jitter.                                             |
 | `reconnectMinUptimeMs` |  `5000` | How long the WebSocket must stay open before the reconnect cycle resets. `0` resets as soon as the connection opens. |
 
@@ -342,7 +338,7 @@ reconnectMs * reconnectBackoff ** (n - 1)
 
 Then apply `reconnectDelayMaxMs`.
 
-If `reconnectDelayMaxMs` is `0`, there is no cap on the wait.
+`0`, a negative number, or a non-finite `reconnectDelayMaxMs` uses the default 30 second cap.
 
 Then apply jitter:
 
@@ -364,15 +360,9 @@ With the defaults, the waits are about:
 
 Each wait is at most 30 seconds, and is shortened by a random 0% to 50%.
 
-`0` means something different for each option:
+`0`, negative numbers, and non-finite values (`NaN`, `Infinity`) match omitting the field: they use that field's default. Two zeros stay meaningful: `reconnectJitter: 0` disables jitter, and `reconnectMinUptimeMs: 0` resets the cycle on `open`.
 
-| Setting                | Meaning of `0`                                  |
-| ---------------------- | ----------------------------------------------- |
-| `reconnectMs`          | Disables auto-reconnect                         |
-| `reconnectMax`         | No cap on auto-reconnects                       |
-| `reconnectDelayMaxMs`  | No cap on the wait                              |
-| `reconnectMinUptimeMs` | Reset the cycle as soon as the connection opens |
-| `reconnectJitter`      | No jitter                                       |
+`reconnectBackoff` below `1`, including `0`, uses the default `2`. Pass `1` for a fixed interval. `reconnectDelayMaxMs: 0` uses the default `30000`. `reconnectJitter` above `1` is clamped to `1`.
 
 For a fixed interval, no jitter, and a reset as soon as each connection opens:
 
@@ -406,7 +396,7 @@ The new WebSocket is created first.
 
 Only after the new WebSocket is constructed successfully is the old one closed. Before the `"close"` handler runs, `status` is `closed`, not `open`, so `send` returns `false`. The reason is `"reconnect"`. This close still belongs to the old socket.
 
-After that handler returns, if this `connect()` still owns the attempt, `status` becomes `"connecting"`. If the handler calls `connect()` and that call fails before a socket exists, the socket already built by this `connect()` stays and becomes `connecting`. `disconnect()` inside the handler still wins.
+After that handler returns, if this `connect()` still owns the attempt, `status` becomes `"connecting"`. A `connect()` or `disconnect()` inside the handler wins. The socket this attempt already built is closed and is not kept when the inner attempt fails to construct. The failure is still emitted.
 
 If `connect()` was run by an already-fired auto-reconnect timer, `phase` stays `"reconnecting"`.
 
@@ -479,7 +469,7 @@ The default is `5000` ms.
 
 With `reconnectMinUptimeMs: 0`, the cycle resets as soon as the WebSocket fires `open`.
 
-A non-finite `reconnectMinUptimeMs` uses the default `5000`. It does not reset on the `open` event itself, and a stable connection does not keep the previous attempt forever.
+A negative or non-finite `reconnectMinUptimeMs` uses the default `5000`. It does not reset on the `open` event itself, and a stable connection does not keep the previous attempt forever.
 
 If the server accepts the connection and then closes it immediately, keep `reconnectMinUptimeMs > 0`.
 
@@ -523,7 +513,7 @@ A message still fires `"message"` when it is recognized as a pong. If `isPong` s
 
 If `ping` throws, or `WebSocket.send` throws for that ping, the ping is not sent, the pong wait still starts, and `"failure"` fires with `source: "ping"` and `cause` the thrown value. A throw after a synchronous `disconnect()` or `connect()` still fires `"failure"`.
 
-`intervalMs` and `timeoutMs` must be finite and greater than `0`. `0`, negative, and non-finite values do not send pings and do not close the socket. `"open"` still fires, then `"failure"` with `source: "liveness"` and `cause` an `Error` whose message is `"invalid liveness"`.
+`intervalMs` and `timeoutMs` must be finite and greater than `0`. `0`, negative, and non-finite values throw when the session is created, with `message` `"invalid liveness"`. A dead heartbeat is not discovered after `"open"`.
 
 When `intervalMs` and `timeoutMs` are both finite and greater than `0`, no matching pong before `timeoutMs` closes the WebSocket.
 
@@ -564,19 +554,19 @@ To use different options, call `createWsContext` again and create another contex
 | Field                  | Type                                      | Default                                 | Description                                                                                                                                                              |
 | ---------------------- | ----------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `url`                  | `MaybeGetter<string>`                     | required                                | WebSocket URL. A sync getter runs at the start of each `connect()`.                                                                                                      |
-| `protocols`            | `MaybeGetter<string \| string[]>`         | none                                    | Passed to `new WebSocket(url, protocols)`. When omitted, the second argument is not passed. An empty string from a getter is passed through.                             |
+| `protocols`            | `string \| string[]`                      | none                                    | Passed to `new WebSocket(url, protocols)`. When omitted, the second argument is not passed. An empty string is passed through.                                            |
 | `autoConnect`          | `boolean`                                 | `true`                                  | Whether `WsProvider` connects on mount.                                                                                                                                  |
 | `connectTimeoutMs`     | `number`                                  | `0`                                     | Closes a handshake that stays `CONNECTING` longer than this, in milliseconds. The close reason is `"connect timeout"`. `0`, non-finite, and negative values turn it off. |
 | `reconnectMs`          | `number`                                  | `0`                                     | First auto-reconnect wait in milliseconds after an unintentional close. `0` disables auto-reconnect. See [Reconnect](#reconnect).                                        |
 | `reconnectMax`         | `number`                                  | `0`                                     | Cap on auto-reconnects. `0` means no cap. Takes effect only when `reconnectMs > 0`.                                                                                      |
-| `reconnectBackoff`     | `number`                                  | `2`                                     | Multiplier for the next wait. `2` doubles it, `1` keeps a fixed interval, and values below `1` are clamped to `1`.                                                       |
-| `reconnectDelayMaxMs`  | `number`                                  | `30000`                                 | Cap in milliseconds for one wait, including jitter. `0` means no cap.                                                                                                    |
-| `reconnectJitter`      | `number`                                  | `0.5`                                   | How much to randomly shorten the wait, in `[0, 1]`. By default the actual wait is shortened by a random 0% to 50%. `1` is full jitter, and `0` means no jitter.          |
-| `reconnectMinUptimeMs` | `number`                                  | `5000`                                  | How long the WebSocket must stay open, in milliseconds, before the reconnect cycle resets. `0` resets immediately after `open`. A non-finite value uses this default.    |
-| `parse`                | `(data: MessageEvent["data"]) => unknown` | see [Message parsing](#message-parsing) | Maps raw `MessageEvent.data` to application data. A throw fires `"failure"`, does not fire `"message"`, and does not close the WebSocket.                                |
+| `reconnectBackoff`     | `number`                                  | `2`                                     | Multiplier for the next wait. `2` doubles it, `1` keeps a fixed interval. Values below `1`, negatives, and non-finite values use `2`.                                   |
+| `reconnectDelayMaxMs`  | `number`                                  | `30000`                                 | Cap in milliseconds for one wait, including jitter. `0`, negatives, and non-finite values use `30000`.                                                                    |
+| `reconnectJitter`      | `number`                                  | `0.5`                                   | How much to randomly shorten the wait, in `[0, 1]`. The default shortens it by a random 0% to 50%. `0` disables jitter, values above `1` clamp to `1`, and negatives or non-finite values use `0.5`. |
+| `reconnectMinUptimeMs` | `number`                                  | `5000`                                  | How long the socket must stay open, in milliseconds, before the cycle resets. `0` resets on `open`. Negatives and non-finite values use `5000`.                          |
+| `parse`                | `(data: MessageEvent["data"]) => unknown` | forward as-is                           | When omitted, `MessageEvent.data` is not decoded. When set, it maps the data; a throw fires `"failure"`, skips `"message"`, and does not close the WebSocket.         |
 | `liveness`             | `LivenessOptions`                         | none                                    | Application-layer heartbeat. Disabled when omitted.                                                                                                                      |
 
-Getters for `url` and `protocols` must run synchronously. Do not `await` or call hooks inside them. If a getter synchronously calls `disconnect()` or `connect()`, that call wins.
+The `url` getter must run synchronously. Do not `await` or call hooks inside it. If it synchronously calls `disconnect()` or `connect()`, that call wins. A socket the outer `connect()` already built is not installed. The failure is still emitted.
 
 When `connectTimeoutMs` is greater than 0, the timer starts once that socket is current and still `CONNECTING`. `open`, `disconnect()`, unmount, close, and a successful replacement all clear it. A timeout uses the same close path as other unintentional closes. `reconnectMs` of `0` still closes the socket, and `phase` becomes `stopped`.
 
@@ -600,8 +590,8 @@ For `connect()` construct failure, see [Reconnect → `connect()` replacement ru
 
 | Field        | Type                                                             | Description                                                                                                                                                                                                       |
 | ------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `intervalMs` | `number`                                                         | Ping interval in milliseconds.                                                                                                                                                                                    |
-| `timeoutMs`  | `number`                                                         | How long to wait for a pong, in milliseconds.                                                                                                                                                                     |
+| `intervalMs` | `number`                                                         | Ping interval in milliseconds. Must be a finite number greater than `0`, or session creation throws.                                                                                                             |
+| `timeoutMs`  | `number`                                                         | How long to wait for a pong, in milliseconds. Must be a finite number greater than `0`, or session creation throws.                                                                                               |
 | `ping`       | a value `WebSocket.send` accepts, or a function that returns one | The ping to send. A function is called before each send. A throw, or a `WebSocket.send` throw for that ping, fires `"failure"` with `source: "ping"`. That ping is not sent, and the pong wait still starts.      |
 | `isPong`     | `(data: unknown) => boolean`                                     | Whether data after `parse` is a pong. A throw counts as not a pong, but `"message"` still fires. A synchronous `disconnect()` or `connect()` that leaves this socket no longer current does not fire `"message"`. |
 

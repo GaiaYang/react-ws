@@ -5,7 +5,7 @@ export interface ReconnectOptions {
   /**
    * 非主動斷線後，第一次自動重連的等待時間（毫秒）
    *
-   * `0` 代表停用自動重連。
+   * `0`、負數、非有限數都代表停用，與省略相同。
    *
    * @default 0
    */
@@ -15,7 +15,7 @@ export interface ReconnectOptions {
    *
    * 不包含最初的 `connect()`，也不包含手動呼叫的 `connect()`。
    *
-   * `0` 代表不限制，只有在 `reconnectMs > 0` 時才會生效。
+   * `0`、負數、非有限數都代表不限制，與省略相同。只有在 `reconnectMs > 0` 時才會生效。
    *
    * @default 0
    */
@@ -23,7 +23,7 @@ export interface ReconnectOptions {
   /**
    * 下一次等待時間的倍率
    *
-   * `1` 代表固定間隔，小於 `1` 的值會限制為 `1`。
+   * `1` 代表固定間隔。小於 `1`、`0`、負數、非有限數都用預設 `2`。
    *
    * @default 2
    */
@@ -33,7 +33,7 @@ export interface ReconnectOptions {
    *
    * 抖動只會縮短等待，不會超過這個上限。
    *
-   * `0` 代表不設上限。
+   * `0`、負數、非有限數都用預設 `30000`。
    *
    * @default 30000
    */
@@ -41,9 +41,9 @@ export interface ReconnectOptions {
   /**
    * 隨機縮短等待時間的幅度，範圍為 `[0, 1]`
    *
-   * `0` 代表不使用抖動，`1` 代表 full jitter。
+   * `0` 代表不使用抖動，`1` 代表 full jitter。大於 `1` 會夾成 `1`。
    *
-   * 預設 `0.5` 是 equal jitter：等待落在計算值的 50%～100%。
+   * 負數與非有限數用預設 `0.5`。預設是 equal jitter：等待落在計算值的 50%～100%。
    *
    * @default 0.5
    */
@@ -53,7 +53,7 @@ export interface ReconnectOptions {
    *
    * `0` 代表連線 `open` 後立即歸零，這時即使很快斷線，下一次重連也會從第一次等待起算，`reconnectMax` 也不容易累加。
    *
-   * 非有限數沿用預設 `5000`，不會立刻歸零，也不會永遠不歸零。
+   * 負數與非有限數用預設 `5000`，不會立刻歸零，也不會永遠不歸零。
    *
    * @default 5000
    */
@@ -62,25 +62,52 @@ export interface ReconnectOptions {
 
 const DEFAULT_RECONNECT_MIN_UPTIME_MS = 5000;
 
-/** 省略的欄位填產品預設。已傳入的值（含 `NaN`）原樣保留 */
+/**
+ * 省略、非有限數、負數用該欄位的預設。
+ *
+ * `reconnectMs`／`reconnectMax` 的預設就是 `0`。
+ * `reconnectJitter: 0` 與 `reconnectMinUptimeMs: 0` 是有效端點，不收成預設。
+ * `reconnectBackoff` 須 `>= 1`，`reconnectDelayMaxMs` 須 `> 0`，否則用預設。
+ */
+function pickReconnectNumber(
+  value: number | undefined,
+  fallback: number,
+  accept: (n: number) => boolean,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || !accept(value)) {
+    return fallback;
+  }
+  return value;
+}
+
+/** 省略與無效值收成產品預設。`createReconnect` 與 `reconnectDelay` 都走這裡 */
 export function resolveReconnectOptions(
   options: ReconnectOptions,
 ): Required<ReconnectOptions> {
-  const {
-    reconnectMs = 0,
-    reconnectMax = 0,
-    reconnectBackoff = 2,
-    reconnectDelayMaxMs = 30_000,
-    reconnectJitter = 0.5,
-    reconnectMinUptimeMs = DEFAULT_RECONNECT_MIN_UPTIME_MS,
-  } = options;
+  const jitter = pickReconnectNumber(
+    options.reconnectJitter,
+    0.5,
+    (n) => n >= 0,
+  );
   return {
-    reconnectMs,
-    reconnectMax,
-    reconnectBackoff,
-    reconnectDelayMaxMs,
-    reconnectJitter,
-    reconnectMinUptimeMs,
+    reconnectMs: pickReconnectNumber(options.reconnectMs, 0, (n) => n > 0),
+    reconnectMax: pickReconnectNumber(options.reconnectMax, 0, (n) => n > 0),
+    reconnectBackoff: pickReconnectNumber(
+      options.reconnectBackoff,
+      2,
+      (n) => n >= 1,
+    ),
+    reconnectDelayMaxMs: pickReconnectNumber(
+      options.reconnectDelayMaxMs,
+      30_000,
+      (n) => n > 0,
+    ),
+    reconnectJitter: Math.min(jitter, 1),
+    reconnectMinUptimeMs: pickReconnectNumber(
+      options.reconnectMinUptimeMs,
+      DEFAULT_RECONNECT_MIN_UPTIME_MS,
+      (n) => n >= 0,
+    ),
   };
 }
 
@@ -95,31 +122,17 @@ export function resolveReconnectOptions(
  */
 export function reconnectDelay(
   attempt: number,
-  options: Required<ReconnectOptions>,
+  options: ReconnectOptions,
 ): number {
-  const {
-    reconnectMs,
-    reconnectBackoff,
-    reconnectDelayMaxMs,
-    reconnectJitter,
-  } = options;
-
-  // 非有限數會產出 NaN；setTimeout(fn, NaN) 等於立刻觸發
-  const factor = Math.max(
-    Number.isFinite(reconnectBackoff) ? reconnectBackoff : 1,
-    1,
-  );
-  const ms = Number.isFinite(reconnectMs) ? reconnectMs : 0;
-  const backoff = ms * factor ** Math.max(attempt - 1, 0);
-  // NaN、Infinity、負數都過不了 > 0，等同不設上限
-  const capped =
-    reconnectDelayMaxMs > 0 ? Math.min(backoff, reconnectDelayMaxMs) : backoff;
-  const jitterRatio = Number.isFinite(reconnectJitter) ? reconnectJitter : 0;
-  const jitter = Math.min(Math.max(jitterRatio, 0), 1);
-  const jittered = capped * (1 - Math.random() * jitter);
+  const resolved = resolveReconnectOptions(options);
+  const backoff =
+    resolved.reconnectMs *
+    resolved.reconnectBackoff ** Math.max(attempt - 1, 0);
+  const capped = Math.min(backoff, resolved.reconnectDelayMaxMs);
+  const jittered = capped * (1 - Math.random() * resolved.reconnectJitter);
   const rounded = Math.round(jittered);
   const clamped = Math.min(Math.max(rounded, 0), MAX_TIMEOUT_MS);
-  // Infinity 已被夾住；NaN 會穿過 Math.min / Math.max
+  // 指數溢位會變成 Infinity，夾回平台上限
   return Number.isFinite(clamped) ? clamped : MAX_TIMEOUT_MS;
 }
 
@@ -198,9 +211,10 @@ type Step =
   | { kind: "reuse" };
 
 export function createReconnect(
-  options: Required<ReconnectOptions>,
+  input: ReconnectOptions,
   apply: (patch: ReconnectPatch) => void,
 ): Reconnect {
+  const options = resolveReconnectOptions(input);
   // cancel() 之後、下一次 onConnectBegin 之前，schedule 直接拒絕
   let intentionalClose = false;
   let step: Step = { kind: "idle" };
@@ -258,13 +272,7 @@ export function createReconnect(
   const schedule = (): boolean => {
     // 沒撐滿 minUptime：清掉待跑的歸零，讓退避沿用本輪計數
     clearUptimeTimer();
-    const reconnectMs = options.reconnectMs;
-    if (
-      intentionalClose ||
-      typeof reconnectMs !== "number" ||
-      !Number.isFinite(reconnectMs) ||
-      reconnectMs <= 0
-    ) {
+    if (intentionalClose || options.reconnectMs <= 0) {
       if (step.kind === "reuse") step = { kind: "idle" };
       return false;
     }
@@ -318,11 +326,7 @@ export function createReconnect(
     },
     onOpen() {
       if (step.kind === "reuse") step = { kind: "idle" };
-      const minUptime = options.reconnectMinUptimeMs;
-      // 非有限數不是「永遠不歸零」；沿用文件上的預設，避免 setTimeout(NaN) 立刻歸零
-      const delay = Number.isFinite(minUptime)
-        ? minUptime
-        : DEFAULT_RECONNECT_MIN_UPTIME_MS;
+      const delay = options.reconnectMinUptimeMs;
       if (delay <= 0) {
         resetCycle();
         return;

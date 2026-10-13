@@ -67,6 +67,10 @@ class MockWebSocket {
   }
 }
 
+function parseJson(data: unknown): unknown {
+  return typeof data === "string" ? JSON.parse(data) : data;
+}
+
 function latestWs(): MockWebSocket {
   const ws = MockWebSocket.instances.at(-1);
   if (!ws) throw new Error("no MockWebSocket");
@@ -187,7 +191,7 @@ describe("createWsContext", () => {
     await act(async () => {
       latestWs().message({ hello: 1 });
     });
-    expect(messages).toEqual([{ hello: 1 }]);
+    expect(messages).toEqual(['{"hello":1}']);
 
     await act(async () => {
       getByText("open").click();
@@ -524,6 +528,7 @@ describe("createWsContext", () => {
     const { WsProvider } = createWsContext({
       url: "ws://test",
       autoConnect: true,
+      parse: parseJson,
       liveness: {
         intervalMs: 3_000,
         timeoutMs: 2_000,
@@ -848,10 +853,10 @@ describe("createWsContext", () => {
     expect(phase()).toBe("open");
   });
 
-  it("protocols getter is passed to WebSocket", () => {
+  it("protocols is passed to WebSocket", () => {
     const { WsProvider } = createWsContext({
       url: "ws://test",
-      protocols: () => "chat",
+      protocols: "chat",
       autoConnect: true,
     });
 
@@ -1081,6 +1086,7 @@ describe("createWsContext", () => {
     const { WsProvider, useWsEvents } = createWsContext({
       url: "ws://test",
       autoConnect: true,
+      parse: parseJson,
       liveness: {
         intervalMs: 3_000,
         timeoutMs: 2_000,
@@ -1213,7 +1219,7 @@ describe("createWsContext", () => {
     await act(async () => {
       latestWs().message({ hello: 1 });
     });
-    expect(messages).toEqual([{ hello: 1 }]);
+    expect(messages).toEqual(['{"hello":1}']);
     expect(errors).toHaveLength(0);
     expect(failures).toEqual([
       {

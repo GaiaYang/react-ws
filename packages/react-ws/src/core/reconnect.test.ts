@@ -493,8 +493,8 @@ describe("reconnect", () => {
     expect(refs.exhausted).toBe(false);
   });
 
-  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
-    "non-finite reconnectMinUptimeMs (%s) resets at 5s",
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    "invalid reconnectMinUptimeMs (%s) resets at 5s",
     (reconnectMinUptimeMs) => {
       const { refs, apply } = createApply();
       const reconnect = createReconnect(
@@ -557,11 +557,13 @@ describe("reconnectDelay", () => {
     expect(reconnectDelay(9, options)).toBe(150);
   });
 
-  it("clamps a shrinking backoff factor to 1", () => {
+  it("uses the default multiplier when backoff is below 1", () => {
     const options = { reconnectMs: 100, reconnectMax: 0, reconnectBackoff: 0 };
-    // 未夾回時 0 ** 1 會讓第 2 次起等待變成 0ms，變相連續重連
-    expect(reconnectDelay(2, options)).toBe(100);
-    expect(reconnectDelay(5, { ...options, reconnectBackoff: 0.5 })).toBe(100);
+    expect(reconnectDelay(2, options)).toBe(200);
+    expect(reconnectDelay(2, { ...options, reconnectBackoff: 0.5 })).toBe(200);
+    expect(
+      reconnectDelay(2, { ...options, reconnectBackoff: Number.NaN }),
+    ).toBe(200);
   });
 
   it("clamps jitter to [0, 1]", () => {
@@ -572,24 +574,25 @@ describe("reconnectDelay", () => {
     expect(reconnectDelay(1, options)).toBe(0);
   });
 
-  it("keeps an uncapped backoff within the setTimeout limit", () => {
+  it("keeps a huge cap within the setTimeout limit", () => {
     expect(
       reconnectDelay(2000, {
         reconnectMs: 100,
         reconnectMax: 0,
         reconnectBackoff: 2,
+        reconnectDelayMaxMs: Number.MAX_VALUE,
       }),
     ).toBe(2 ** 31 - 1);
   });
 
-  it("non-finite backoff and jitter yield a finite non-zero delay", () => {
+  it("non-finite backoff and jitter use defaults and stay finite", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
-    const delay = reconnectDelay(1, {
+    const delay = reconnectDelay(2, {
       reconnectMs: 100,
       reconnectMax: 0,
       reconnectBackoff: Number.NaN,
       reconnectJitter: Number.NaN,
     });
-    expect(delay).toBe(100);
+    expect(delay).toBe(200);
   });
 });

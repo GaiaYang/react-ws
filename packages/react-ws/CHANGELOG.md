@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- Incoming data is forwarded as `MessageEvent.data`. The default no longer runs `JSON.parse`. Pass `parse` to decode
+- `protocols` is `string | string[]`. It is no longer a getter
+- A `connect()` or `disconnect()` that runs while another `connect()` is in progress wins. Failures from the attempt that lost are still emitted. A nested construct failure no longer keeps the socket the outer `connect()` had already built
+- Reconnect numbers that are `0`, negative, or non-finite use that option's default, the same as omitting it. `reconnectJitter: 0` still disables jitter. `reconnectMinUptimeMs: 0` still resets on `open`. `reconnectBackoff` below `1` uses `2` instead of clamping to `1`. `reconnectDelayMaxMs: 0` uses `30000` instead of meaning no cap. A negative `reconnectMinUptimeMs` uses `5000` instead of resetting on `open`. A negative or non-finite `reconnectJitter` uses `0.5` instead of disabling jitter
+- Invalid `liveness` delays (`0`, negative, or non-finite `intervalMs` or `timeoutMs`) throw `Error` `"invalid liveness"` when the session is created. They no longer open the socket and then emit `"failure"` with `source: "liveness"`. That source is gone
+
 ## [0.11.0] - 2026-10-09
 
 ### Added

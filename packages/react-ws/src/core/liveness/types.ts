@@ -5,13 +5,13 @@ export interface LivenessOptions {
   /**
    * Ping 的發送間隔（毫秒）
    *
-   * 必須是大於 `0` 的有限數。`0`、負數、非有限數不會啟動 liveness。
+   * 必須是大於 `0` 的有限數。`0`、負數、非有限數會在建立 session 時擲出。
    */
   intervalMs: number;
   /**
    * 等待 Pong 的時間（毫秒）
    *
-   * 必須是大於 `0` 的有限數。`0`、負數、非有限數不會啟動 liveness。
+   * 必須是大於 `0` 的有限數。`0`、負數、非有限數會在建立 session 時擲出。
    */
   timeoutMs: number;
   /**
