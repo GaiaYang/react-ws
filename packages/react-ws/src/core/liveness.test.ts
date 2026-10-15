@@ -207,6 +207,25 @@ describe("liveness", () => {
     session.stop();
   });
 
+  it("mutating delays after creation keeps the validated interval", () => {
+    const send = vi.fn();
+    const ws = { readyState: 1, close: vi.fn(), send } as unknown as WebSocket;
+    const options = {
+      intervalMs: 1_000,
+      timeoutMs: 5_000,
+      ping: "ping",
+      isPong: () => false,
+    };
+    const session = createLiveness(options, () => {});
+    options.intervalMs = 0;
+    options.timeoutMs = 0;
+
+    session.start(ws);
+    vi.advanceTimersByTime(1_000);
+    expect(send).toHaveBeenCalledTimes(2);
+    session.stop();
+  });
+
   it("createLiveness ping throw still times out the socket", () => {
     const close = vi.fn();
     const ws = { readyState: 1, close, send: vi.fn() } as unknown as WebSocket;

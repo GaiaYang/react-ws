@@ -224,9 +224,7 @@ export function createReconnect(
   let attempt = 0;
 
   const attemptReachedMax = () =>
-    typeof options.reconnectMax === "number" &&
-    options.reconnectMax > 0 &&
-    attempt >= options.reconnectMax;
+    options.reconnectMax > 0 && attempt >= options.reconnectMax;
 
   const clearUptimeTimer = () => {
     if (uptimeTimer != null) {

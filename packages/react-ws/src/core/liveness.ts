@@ -44,10 +44,11 @@ interface LivenessController {
 }
 
 function createLivenessController(
-  options: LivenessOptions,
+  intervalMs: number,
+  timeoutMs: number,
+  isPong: LivenessOptions["isPong"],
   onTimeout: () => void,
 ): LivenessController {
-  const { intervalMs, timeoutMs, isPong } = options;
 
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -143,9 +144,15 @@ export function createLiveness(
     start(socket) {
       controller?.stop();
       // 逾時只通知這次 start 的 socket。關線由 onTimeout 決定
-      controller = createLivenessController(options, () => {
-        onTimeout(socket);
-      });
+      // 間隔用建立時已檢查的數字。之後改 options 不能把 interval 改成 0
+      controller = createLivenessController(
+        intervalMs,
+        timeoutMs,
+        options.isPong,
+        () => {
+          onTimeout(socket);
+        },
+      );
       controller.start(() => {
         if (socket.readyState !== READY_OPEN) return;
         try {

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_TIMEOUT_MS } from "./socket";
 import {
   createReconnect as createReconnectWith,
   reconnectDelay as reconnectDelayWith,
@@ -6,13 +7,13 @@ import {
   type ReconnectPatch,
 } from "./reconnect";
 
-/** 直接呼叫時補齊欄位，數值沿用這支函式以前的缺欄結果。產品預設由 session 測試鎖。 */
+/** 狀態機測試補齊欄位，不套產品的 30 秒上限。產品預設由 session 測試鎖。 */
 function reconnectOptions(patch: ReconnectOptions): Required<ReconnectOptions> {
   return {
     reconnectMs: 0,
     reconnectMax: 0,
     reconnectBackoff: 1,
-    reconnectDelayMaxMs: 0,
+    reconnectDelayMaxMs: MAX_TIMEOUT_MS,
     reconnectJitter: 0,
     reconnectMinUptimeMs: 0,
     ...patch,
