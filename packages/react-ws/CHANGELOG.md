@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-16
+
 ### Breaking
 
 - Incoming data is forwarded as `MessageEvent.data`. The default no longer runs `JSON.parse`. Pass `parse` to decode
@@ -14,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `connect()` while that `connect()` is still running is ignored, so one attempt opens at most one socket. `disconnect()` or unmount still aborts it: a socket already built is closed and not installed. A construct failure is still emitted. `parse`, `isPong`, `ping`, and a `"close"` from a socket that is already current can still call `connect()` or `disconnect()`. A `parse` that calls `connect()` and then throws still emits `"failure"`
 - Reconnect numbers that are `0`, negative, or non-finite use that option's default, the same as omitting it. `reconnectJitter: 0` still disables jitter. `reconnectMinUptimeMs: 0` still resets on `open`. `reconnectBackoff` below `1` uses `2` instead of clamping to `1`. `reconnectDelayMaxMs: 0` uses `30000` instead of meaning no cap. A negative `reconnectMinUptimeMs` uses `5000` instead of resetting on `open`. A negative or non-finite `reconnectJitter` uses `0.5` instead of disabling jitter
 - Invalid `liveness` delays (`0`, negative, or non-finite `intervalMs` or `timeoutMs`) throw `Error` `"invalid liveness"` when the session is created. They no longer open the socket and then emit `"failure"` with `source: "liveness"`. That source is gone
+
+### Fixed
+
+- `liveness` `intervalMs` and `timeoutMs` stay at the values checked when the session is created. Changing those fields on the options object afterward does not change the timers
 
 ## [0.11.0] - 2026-10-09
 
