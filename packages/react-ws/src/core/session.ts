@@ -1,7 +1,5 @@
 import { createEmitter, type Emitter } from "./emitter";
-import { livenessDelaysOk } from "./liveness/controller";
-import { resolveLiveness } from "./liveness/liveness";
-import type { LivenessOptions } from "./liveness/types";
+import { resolveLiveness, type LivenessOptions } from "./liveness";
 import { resolveMaybeGetter, type MaybeGetter } from "./maybe-getter";
 import { createReconnect, type ReconnectOptions } from "./reconnect";
 import {
@@ -186,12 +184,6 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     connectTimeoutMs: connectTimeoutOption,
   } = options;
   const connectTimeoutMs = resolveConnectTimeoutMs(connectTimeoutOption);
-  if (
-    livenessOptions &&
-    !livenessDelaysOk(livenessOptions.intervalMs, livenessOptions.timeoutMs)
-  ) {
-    throw new Error("invalid liveness");
-  }
 
   const store = createWsStore();
   const emitter = createEmitter<WsEvents>();
