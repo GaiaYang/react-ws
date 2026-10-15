@@ -34,7 +34,7 @@ export function createWsContext(options: CreateWsContextOptions) {
     useEffect(() => {
       session.attach();
       if (autoConnect) session.connect();
-      return () => session.teardown("provider unmount");
+      return () => session.teardown("provider unmount", true);
     }, [session]);
 
     const actions = useMemo<WsActions>(

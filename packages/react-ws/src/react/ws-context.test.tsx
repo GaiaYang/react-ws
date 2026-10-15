@@ -2432,7 +2432,7 @@ describe("createWsContext", () => {
     expect(phase()).toBe("idle");
   });
 
-  it("close handler connect takes over the nested socket", async () => {
+  it("connect inside replacement close keeps the socket already built", async () => {
     const { WsProvider, useWsActions, useWsState, useWsEvents } =
       createWsContext({
         url: "ws://test",
@@ -2472,16 +2472,15 @@ describe("createWsContext", () => {
     await act(async () => {
       api.connect();
     });
-    expect(MockWebSocket.instances).toHaveLength(3);
-    const nested = latestWs();
-    const abandoned = MockWebSocket.instances[1]!;
-    expect(abandoned.readyState).toBe(MockWebSocket.CLOSED);
-    expect(nested.readyState).toBe(MockWebSocket.CONNECTING);
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const built = latestWs();
+    expect(MockWebSocket.instances[0]!.readyState).toBe(MockWebSocket.CLOSED);
+    expect(built.readyState).toBe(MockWebSocket.CONNECTING);
     expect(status()).toBe("connecting");
     expect(phase()).toBe("connecting");
 
     await act(async () => {
-      nested.open();
+      built.open();
     });
     expect(status()).toBe("open");
     expect(phase()).toBe("open");

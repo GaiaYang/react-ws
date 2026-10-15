@@ -37,16 +37,6 @@ export interface LivenessOptions {
   isPong: (data: unknown) => boolean;
 }
 
-/** `0`、負數、非有限數都不是有效的 ping／pong 間隔 */
-function livenessDelaysOk(intervalMs: number, timeoutMs: number): boolean {
-  return (
-    Number.isFinite(intervalMs) &&
-    intervalMs > 0 &&
-    Number.isFinite(timeoutMs) &&
-    timeoutMs > 0
-  );
-}
-
 interface LivenessController {
   start: (sendPing: () => void) => void;
   stop: () => void;
@@ -137,7 +127,13 @@ export function createLiveness(
   onTimeout: (socket: WebSocket) => void,
   onPingFailure?: (cause: unknown) => void,
 ): Liveness {
-  if (!livenessDelaysOk(options.intervalMs, options.timeoutMs)) {
+  const { intervalMs, timeoutMs } = options;
+  if (
+    !Number.isFinite(intervalMs) ||
+    intervalMs <= 0 ||
+    !Number.isFinite(timeoutMs) ||
+    timeoutMs <= 0
+  ) {
     throw new Error("invalid liveness");
   }
 

@@ -21,7 +21,7 @@ export interface WsSessionOptions extends ReconnectOptions {
    *
    * getter 必須同步執行，不可 `await`，也不可呼叫 hooks。
    *
-   * 若 getter 同步呼叫 `disconnect()` 或 `connect()`，以那次呼叫為準，外層這次 `connect()` 不會再蓋掉它。
+   * 進行中的 `connect()` 裡再呼叫 `connect()` 會被略過，仍使用這次 getter 的回傳值。`disconnect()` 會中止這次嘗試。
    *
    * 空字串視為建立失敗：觸發 `"failure"`，保留既有連線，`connect()` 本身不會 throw。
    */
@@ -136,7 +136,7 @@ export interface WsActions {
    *
    * 沒有 `WebSocket` 時不沿用上面的排程：沒有現役 socket 就變成 `phase: "stopped"`，不再排下一次。已有 socket 則維持不變。
    *
-   * getter 或事件回呼裡又呼叫的 `connect()`／`disconnect()` 以那一次為準。外層若已建好 socket 但被取代，會關掉那顆，不再裝上。失敗仍會觸發 `"failure"`。
+   * 這次 `connect()` 還沒返回時再呼叫 `connect()` 會被略過，不會多開一條。`disconnect()` 或卸載會中止這次嘗試：已建好但還沒裝上的 socket 會關掉。建構失敗仍會觸發 `"failure"`。
    */
   connect: () => void;
   /**
@@ -152,8 +152,12 @@ export interface WsActions {
 export interface WsSession extends WsActions {
   store: WsStoreApi;
   emitter: WsEventsEmitter;
-  /** `disconnect` 與 Provider 卸載共用，避免兩處漏清 timer */
-  teardown: (reason: string) => void;
+  /**
+   * `disconnect` 與 Provider 卸載共用，避免兩處漏清 timer。
+   *
+   * `detach` 為 true 時，卸載完成前的 `connect()` 不會開線。
+   */
+  teardown: (reason: string, detach?: boolean) => void;
   /** Provider 的 effect 再次掛上時呼叫，卸載期間的 `connect()` 才會恢復 */
   attach: () => void;
 }
@@ -190,7 +194,10 @@ export function createWsSession(options: WsSessionOptions): WsSession {
   const reconnect = createReconnect(options, store.setState);
 
   let wsCurrent: WebSocket | null = null;
-  let connectGeneration = 0;
+  /** 這次 `connect()` 還沒返回。重入的 `connect()` 略過，避免多開一條 */
+  let inConnect = false;
+  /** `disconnect()` 或卸載已結束這次嘗試 */
+  let aborted = false;
   /** 只有 Provider 卸載會關掉。`disconnect()` 之後仍可再 `connect()` */
   let providerAttached = true;
   let connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -249,9 +256,9 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     providerAttached = true;
   }
 
-  function teardown(reason: string): void {
-    if (reason === "provider unmount") providerAttached = false;
-    connectGeneration += 1;
+  function teardown(reason: string, detach = false): void {
+    if (detach) providerAttached = false;
+    aborted = true;
     clearConnectTimer();
     reconnect.cancel();
     liveness.stop();
@@ -274,148 +281,143 @@ export function createWsSession(options: WsSessionOptions): WsSession {
     }
   }
 
-  function takenOver(generation: number): boolean {
-    return generation !== connectGeneration;
-  }
-
-  /** 後續的 connect／disconnect 已結束。不要把沒裝上的 socket 留在 connecting */
-  function dropBuiltSocket(ws: WebSocket): void {
-    detachAndClose(ws);
-    const state = store.getState();
-    if (
-      wsCurrent == null &&
-      state.phase !== "idle" &&
-      state.nextReconnectAt === 0
-    ) {
-      store.setState({ status: "closed", phase: "stopped" });
-    }
-  }
-
   function connect(): void {
-    if (!providerAttached) return;
-    const generation = ++connectGeneration;
-    // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零
-    reconnect.prepareManualConnect();
-    if (takenOver(generation)) return;
+    if (!providerAttached || inConnect) return;
+    inConnect = true;
+    aborted = false;
+    try {
+      // 建構失敗不會走到 onConnectBegin，次數仍要在這裡歸零
+      reconnect.prepareManualConnect();
+      if (aborted) return;
 
-    if (typeof globalThis.WebSocket === "undefined") {
-      const detail = {
-        source: "construct" as const,
-        cause: new Error("WebSocket is undefined"),
-      };
-      const fired = reconnect.clearTimerTrigger();
-      // 現役 socket 還在就留著。沒有的話不能停在 idle，否則和「還沒 connect」一樣。
-      if (wsCurrent != null && !fired) {
+      if (typeof globalThis.WebSocket === "undefined") {
+        const detail = {
+          source: "construct" as const,
+          cause: new Error("WebSocket is undefined"),
+        };
+        const fired = reconnect.clearTimerTrigger();
+        if (!fired) {
+          // 現役 socket 還在就留著。沒有的話不能停在 idle，否則和「還沒 connect」一樣。
+          if (wsCurrent != null) {
+            emitter.emit("failure", detail);
+            return;
+          }
+          // 沒有 WebSocket 就不要再排。只清掉還在等的那次。
+          if (store.getState().nextReconnectAt > 0) reconnect.cancel();
+        }
+        if (aborted) {
+          emitter.emit("failure", detail);
+          return;
+        }
+        store.setState({ status: "closed", phase: "stopped" });
         emitter.emit("failure", detail);
         return;
       }
-      // 沒有 WebSocket 就不要再排。只清掉還在等的那次。
-      if (!fired && store.getState().nextReconnectAt > 0) {
-        reconnect.cancel();
-      }
-      store.setState({ status: "closed", phase: "stopped" });
-      emitter.emit("failure", detail);
-      return;
-    }
 
-    let ws: WebSocket;
-    try {
-      const resolvedUrl = resolveMaybeGetter(url);
-      if (resolvedUrl === "") throw new Error("empty url");
-      // 後續的 connect／disconnect 已接管，不要再多開一條。
-      if (takenOver(generation)) return;
-      ws =
-        protocols === undefined
-          ? new WebSocket(resolvedUrl)
-          : new WebSocket(resolvedUrl, protocols);
-    } catch (cause) {
-      // 先 store 再 emit，避免 handler 裡的 disconnect 蓋掉這次排程
-      if (!takenOver(generation)) {
-        const outcome = reconnect.onConstructFailure();
-        if (outcome === "stopped") {
-          store.setState({ status: "closed", phase: "stopped" });
-        } else if (outcome === "reconnecting") {
-          store.setState({ status: "closed", phase: "reconnecting" });
-        }
-      }
-      emitter.emit("failure", { source: "construct", cause });
-      return;
-    }
-
-    if (takenOver(generation)) {
-      dropBuiltSocket(ws);
-      return;
-    }
-
-    const fromReconnect = reconnect.onConnectBegin();
-    liveness.stop();
-
-    const prev = wsCurrent;
-    if (prev) {
-      clearConnectTimer();
-      wsCurrent = null;
-      detachAndClose(prev);
-      // 舊線已死。status 先離開 open，close 回呼才不會用 status === "open" 去送。
-      // phase 用這次嘗試自己的：手動是 connecting，已觸發的自動重連維持 reconnecting。
-      store.setState({
-        status: "closed",
-        phase: fromReconnect ? "reconnecting" : "connecting",
-      });
-      emitter.emit("close", clientCloseEvent("reconnect"));
-    }
-
-    if (takenOver(generation)) {
-      dropBuiltSocket(ws);
-      return;
-    }
-
-    store.setState({
-      status: "connecting",
-      phase: fromReconnect ? "reconnecting" : "connecting",
-    });
-    wsCurrent = ws;
-    armConnectTimer(ws);
-
-    ws.onopen = (event) => {
-      if (wsCurrent !== ws) return;
-      clearConnectTimer();
-      reconnect.onOpen();
-      store.setState({ status: "open", phase: "open" });
-      // 已經 open 的這顆先通知，第一個 ping 不得早於訂閱者
-      emitter.emit("open", event);
-      if (wsCurrent !== ws) return;
-      liveness.start(ws);
-    };
-
-    ws.onmessage = (event) => {
-      if (wsCurrent !== ws) return;
-      let data: unknown;
+      let ws: WebSocket;
       try {
-        data = parse(event.data);
+        const resolvedUrl = resolveMaybeGetter(url);
+        if (resolvedUrl === "") throw new Error("empty url");
+        if (aborted) return;
+        ws =
+          protocols === undefined
+            ? new WebSocket(resolvedUrl)
+            : new WebSocket(resolvedUrl, protocols);
       } catch (cause) {
-        emitter.emit("failure", { source: "parse", cause });
+        // 先 store 再 emit，避免 handler 裡的 disconnect 蓋掉這次排程
+        if (!aborted) {
+          const outcome = reconnect.onConstructFailure();
+          if (outcome === "stopped") {
+            store.setState({ status: "closed", phase: "stopped" });
+          } else if (outcome === "reconnecting") {
+            store.setState({ status: "closed", phase: "reconnecting" });
+          }
+        }
+        emitter.emit("failure", { source: "construct", cause });
         return;
       }
-      // parse 可能已斷線或換線，舊訊息不能再送
-      if (wsCurrent !== ws) return;
-      try {
-        liveness.onMessage(data);
-      } catch (cause) {
-        // isPong 不是 socket 事件，換線之後也要讓開發者看到
-        emitter.emit("failure", { source: "isPong", cause });
+
+      if (aborted) {
+        detachAndClose(ws);
+        return;
       }
-      if (wsCurrent !== ws) return;
-      emitter.emit("message", data, event);
-    };
 
-    ws.onerror = (event) => {
-      if (wsCurrent !== ws) return;
-      emitter.emit("error", event);
-    };
+      const fromReconnect = reconnect.onConnectBegin();
+      liveness.stop();
 
-    ws.onclose = (event) => {
-      settleClose(ws, event);
-    };
+      const prev = wsCurrent;
+      if (prev) {
+        clearConnectTimer();
+        wsCurrent = null;
+        detachAndClose(prev);
+        // 舊線已死。status 先離開 open，close 回呼才不會用 status === "open" 去送。
+        // phase 用這次嘗試自己的：手動是 connecting，已觸發的自動重連維持 reconnecting。
+        store.setState({
+          status: "closed",
+          phase: fromReconnect ? "reconnecting" : "connecting",
+        });
+        emitter.emit("close", clientCloseEvent("reconnect"));
+      }
+
+      if (aborted) {
+        detachAndClose(ws);
+        return;
+      }
+
+      store.setState({
+        status: "connecting",
+        phase: fromReconnect ? "reconnecting" : "connecting",
+      });
+      if (aborted) {
+        detachAndClose(ws);
+        return;
+      }
+      wsCurrent = ws;
+      armConnectTimer(ws);
+
+      ws.onopen = (event) => {
+        if (wsCurrent !== ws) return;
+        clearConnectTimer();
+        reconnect.onOpen();
+        store.setState({ status: "open", phase: "open" });
+        // 已經 open 的這顆先通知，第一個 ping 不得早於訂閱者
+        emitter.emit("open", event);
+        if (wsCurrent !== ws) return;
+        liveness.start(ws);
+      };
+
+      ws.onmessage = (event) => {
+        if (wsCurrent !== ws) return;
+        let data: unknown;
+        try {
+          data = parse(event.data);
+        } catch (cause) {
+          emitter.emit("failure", { source: "parse", cause });
+          return;
+        }
+        // parse 可能已斷線或換線，舊訊息不能再送
+        if (wsCurrent !== ws) return;
+        try {
+          liveness.onMessage(data);
+        } catch (cause) {
+          // isPong 不是 socket 事件，換線之後也要讓開發者看到
+          emitter.emit("failure", { source: "isPong", cause });
+        }
+        if (wsCurrent !== ws) return;
+        emitter.emit("message", data, event);
+      };
+
+      ws.onerror = (event) => {
+        if (wsCurrent !== ws) return;
+        emitter.emit("error", event);
+      };
+
+      ws.onclose = (event) => {
+        settleClose(ws, event);
+      };
+    } finally {
+      inConnect = false;
+    }
   }
 
   reconnect.bindOnReconnect(connect);

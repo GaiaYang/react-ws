@@ -227,40 +227,26 @@ describe("createWsSession", () => {
     expect(latestSocket().readyState).toBe(MockWebSocket.CONNECTING);
   });
 
-  it("failed connect inside replacement close drops the socket already built", () => {
-    let fail = false;
-    const session = createWsSession({
-      url: () => {
-        if (fail) throw new Error("no token");
-        return "ws://example.test";
-      },
-    });
-    const errors: string[] = [];
-    session.emitter.on("failure", (detail) => {
-      if (detail.cause instanceof Error) errors.push(detail.cause.message);
-    });
+  it("connect inside replacement close does not open another socket", () => {
+    const session = createWsSession({ url: "ws://example.test" });
+    let nested = 0;
     session.emitter.on("close", (event) => {
-      if (event.reason === "reconnect") {
-        fail = true;
-        session.connect();
-      }
+      if (event.reason !== "reconnect") return;
+      nested += 1;
+      session.connect();
     });
 
     session.connect();
     latestSocket().open();
     session.connect();
 
-    expect(errors).toEqual(["no token"]);
+    expect(nested).toBe(1);
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(latestSocket().readyState).toBe(MockWebSocket.CONNECTING);
     expect(session.getState()).toMatchObject({
-      status: "closed",
-      phase: "stopped",
+      status: "connecting",
+      phase: "connecting",
     });
-    expect(
-      MockWebSocket.instances.filter(
-        (ws) => ws.readyState === MockWebSocket.CONNECTING,
-      ),
-    ).toHaveLength(0);
-    expect(session.send("late")).toBe(false);
   });
 
   it("connect without WebSocket leaves a visible failure", () => {
@@ -344,7 +330,7 @@ describe("createWsSession", () => {
     expect(session.getState().phase).toBe("connecting");
   });
 
-  it("missing WebSocket inside replacement close does not install or reconnect", () => {
+  it("connect inside replacement close ignores a missing WebSocket", () => {
     vi.useFakeTimers();
     const session = createWsSession({
       url: "ws://example.test",
@@ -369,19 +355,15 @@ describe("createWsSession", () => {
     latestSocket().open();
     session.connect();
 
-    expect(failures).toEqual(["WebSocket is undefined"]);
+    expect(failures).toEqual([]);
     expect(session.getState()).toMatchObject({
-      status: "closed",
-      phase: "stopped",
+      status: "connecting",
+      phase: "connecting",
     });
-    expect(
-      MockWebSocket.instances.filter(
-        (ws) => ws.readyState !== MockWebSocket.CLOSED,
-      ),
-    ).toHaveLength(0);
+    expect(latestSocket().readyState).toBe(MockWebSocket.CONNECTING);
     vi.advanceTimersByTime(1_000);
     expect(MockWebSocket.instances).toHaveLength(2);
-    expect(session.getState().phase).toBe("stopped");
+    expect(session.getState().phase).toBe("connecting");
   });
 
   it("getter that disconnects and throws still reports the failure", () => {
@@ -443,7 +425,7 @@ describe("createWsSession", () => {
     expect(MockWebSocket.instances).toHaveLength(0);
   });
 
-  it("getter that connects and then throws still reports the failure", () => {
+  it("getter connect is ignored and the throw still fails construction", () => {
     let nested = false;
     const session = createWsSession({
       url: () => {
@@ -469,10 +451,10 @@ describe("createWsSession", () => {
       },
     ]);
     expect(session.getState()).toMatchObject({
-      status: "connecting",
-      phase: "connecting",
+      status: "idle",
+      phase: "idle",
     });
-    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it("parse that disconnects does not deliver the message", () => {
@@ -944,7 +926,7 @@ describe("createWsSession", () => {
     },
   );
 
-  it("failed nested connect while a socket is open still reports the outer failure", () => {
+  it("getter connect is ignored and a throw keeps the open socket", () => {
     let step = 0;
     const session = createWsSession({
       url: () => {
@@ -967,7 +949,7 @@ describe("createWsSession", () => {
     socket.open();
     session.connect();
 
-    expect(failures).toEqual(["inner", "token expired"]);
+    expect(failures).toEqual(["token expired"]);
     expect(session.getState()).toMatchObject({
       status: "open",
       phase: "open",
@@ -1019,7 +1001,7 @@ describe("createWsSession", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
   });
 
-  it("getter connect without WebSocket does not let the outer connect replace the socket", () => {
+  it("getter connect is ignored and the returned url replaces the socket", () => {
     let opened = false;
     const session = createWsSession({
       url: () => {
@@ -1042,13 +1024,14 @@ describe("createWsSession", () => {
     opened = true;
     session.connect();
 
-    expect(failures).toEqual(["WebSocket is undefined"]);
+    expect(failures).toEqual([]);
     expect(session.getState()).toMatchObject({
-      status: "open",
-      phase: "open",
+      status: "connecting",
+      phase: "connecting",
     });
-    expect(socket.readyState).toBe(MockWebSocket.OPEN);
-    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+    expect(latestSocket().url).toBe("ws://replaced");
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 
   it("kept socket can send and disconnect after WebSocket is removed", () => {
